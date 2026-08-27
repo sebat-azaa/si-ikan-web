@@ -13,6 +13,7 @@ import {
   ChevronRight,
   FileQuestion,
   FileCheck,
+  Eye,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -114,7 +115,7 @@ export function DocumentTable({
               <th scope="col" className="px-5 py-3.5 font-semibold w-36">
                 Tanggal Unggah
               </th>
-              <th scope="col" className="px-5 py-3.5 text-center font-semibold w-40">
+              <th scope="col" className="px-5 py-3.5 text-center font-semibold w-56">
                 Aksi
               </th>
             </tr>
@@ -189,6 +190,24 @@ export function DocumentTable({
                   {/* Action Buttons */}
                   <td className="px-5 py-4 text-center whitespace-nowrap">
                     <div className="flex items-center justify-center gap-1.5">
+                      {/* Lihat / View Button (Opens in new tab) */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          if (onView) {
+                            onView(doc);
+                          } else {
+                            window.open(doc.file_url, "_blank", "noopener,noreferrer");
+                          }
+                        }}
+                        className="h-8 border-slate-300 text-slate-700 bg-slate-50 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 text-xs gap-1 shadow-none"
+                        title="Lihat berkas PDF di tab baru"
+                      >
+                        <Eye className="h-3.5 w-3.5 text-slate-500" />
+                        <span>Lihat</span>
+                      </Button>
+
                       {/* Download Button (Available for both Admin and User) */}
                       <Button
                         variant="outline"

@@ -375,7 +375,7 @@ export default function DashboardPage() {
           userRole={currentUser?.role || "User"}
           onDownload={handleDownload}
           onDelete={(doc) => setDocToDelete(doc)}
-          onView={(doc) => setDocToView(doc)}
+          onView={(doc) => window.open(doc.file_url, "_blank", "noopener,noreferrer")}
           isLoading={isLoadingDocs}
         />
       </main>
