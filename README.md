@@ -133,4 +133,6 @@ Buka browser di `http://localhost:3000`.
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 5. Klik **Deploy**. Selesai!
-"# si-ikan-web" 
+"# si-ikan-web"
+
+Update Vercel
