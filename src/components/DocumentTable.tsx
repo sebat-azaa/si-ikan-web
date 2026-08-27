@@ -86,7 +86,7 @@ export function DocumentTable({
         <div className="flex items-center gap-2">
           <FileCheck className="h-5 w-5 text-emerald-600" />
           <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-            Tabel Data Arsip Dokumen Perencanaan & Kinerja
+            Tabel Data Arsip Dokumen Keuangan, Anggaran & Perencanaan
           </h2>
         </div>
         <span className="text-xs text-slate-500 font-medium">

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { UserProfile } from "@/lib/types";
 import { APP_CONFIG } from "@/lib/constants";
 import { LogOut, ShieldCheck, User, Building2 } from "lucide-react";
@@ -10,10 +11,9 @@ import { Badge } from "./ui/badge";
 interface HeaderProps {
   user: UserProfile | null;
   onLogout: () => void;
-  isMockMode?: boolean;
 }
 
-export function Header({ user, onLogout, isMockMode }: HeaderProps) {
+export function Header({ user, onLogout }: HeaderProps) {
   const isAdmin = user?.role === "Admin";
 
   return (
@@ -22,33 +22,24 @@ export function Header({ user, onLogout, isMockMode }: HeaderProps) {
         <div className="flex h-20 items-center justify-between">
           {/* Brand & Logo Area */}
           <div className="flex items-center gap-3.5">
-            {/* Official Government / Marine Emblem */}
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 p-0.5 shadow-md shadow-emerald-950/40 ring-2 ring-emerald-300/30">
-              <div className="flex h-full w-full items-center justify-center rounded-[10px] bg-emerald-950/80 text-white">
-                <svg
-                  className="h-7 w-7 text-emerald-300"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  {/* Fish + Waves Logo Graphic */}
-                  <path d="M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.46-3.44 6-7 6-3.56 0-7.56-2.54-8.5-6Z" />
-                  <path d="M18 12h.01" />
-                  <path d="M2 16c1.5-2 3.5-2 5 0 1.5 2 3.5 2 5 0" />
-                  <path d="M2 8c1.5-2 3.5-2 5 0 1.5 2 3.5 2 5 0" />
-                </svg>
-              </div>
+            {/* Official Government Emblem Image */}
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 p-1 shadow-md shadow-emerald-950/40 ring-1 ring-emerald-300/30 backdrop-blur-sm">
+              <Image
+                src="/logo.svg"
+                alt="Logo Gunungkidul"
+                width={48}
+                height={48}
+                priority
+                className="h-10 w-auto object-contain drop-shadow-sm"
+              />
             </div>
 
             <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="text-xl font-extrabold tracking-tight text-white drop-shadow-sm font-sans sm:text-2xl">
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl font-black tracking-wide text-white drop-shadow-sm font-sans sm:text-3xl">
                   {APP_CONFIG.name}
                 </span>
-                <span className="hidden rounded-full bg-emerald-700/60 px-2.5 py-0.5 text-[11px] font-medium tracking-wide text-emerald-200 border border-emerald-600/50 md:inline-block">
+                <span className="hidden rounded-full bg-emerald-700/60 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-emerald-200 border border-emerald-600/50 md:inline-block">
                   v1.0
                 </span>
               </div>

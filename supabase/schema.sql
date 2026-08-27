@@ -1,5 +1,5 @@
 -- ==============================================================================
--- SI-IKAN: Sistem Informasi Integrasi Kinerja, Anggaran dan Perencanaan
+-- SI-IKAN: Sistem Informasi Integrasi Keuangan, Anggaran & Perencanaan
 -- Dinas Kelautan dan Perikanan Kabupaten Gunungkidul
 -- Database Schema & Security Policies for Supabase (PostgreSQL)
 -- ==============================================================================

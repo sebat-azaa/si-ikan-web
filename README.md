@@ -1,4 +1,4 @@
-# SI-IKAN (Sistem Informasi Integrasi Kinerja, Anggaran dan Perencanaan)
+# SI-IKAN (Sistem Informasi Integrasi Keuangan, Anggaran & Perencanaan)
 ### Dinas Kelautan dan Perikanan Kabupaten Gunungkidul
 
 ![SI-IKAN Banner](https://img.shields.io/badge/SI--IKAN-DKP%20Gunungkidul-047857?style=for-the-badge)

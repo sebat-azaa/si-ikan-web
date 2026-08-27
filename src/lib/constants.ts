@@ -2,7 +2,7 @@ import { DocumentCategory } from './types';
 
 export const APP_CONFIG = {
   name: 'SI-IKAN',
-  longName: 'Sistem Informasi Integrasi Kinerja, Anggaran dan Perencanaan',
+  longName: 'Sistem Informasi Integrasi Keuangan, Anggaran & Perencanaan',
   agencyName: 'Dinas Kelautan dan Perikanan',
   regionName: 'Kabupaten Gunungkidul',
   fullName: 'SI-IKAN - Dinas Kelautan dan Perikanan Kab. Gunungkidul',

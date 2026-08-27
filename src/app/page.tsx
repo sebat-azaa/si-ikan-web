@@ -17,23 +17,21 @@ import {
   UserProfile,
   UserRole,
 } from "@/lib/types";
-import { INITIAL_MOCK_DOCUMENTS } from "@/lib/mockData";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/client";
 import { getRoleFromEmail } from "@/lib/utils";
-import { Plus, Download, FileUp, Sparkles, AlertCircle } from "lucide-react";
+import { Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function DashboardPage() {
   const router = useRouter();
-  const supabaseConfigured = isSupabaseConfigured();
 
   // User State
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
   // Documents State
-  const [documents, setDocuments] = useState<DocumentItem[]>(INITIAL_MOCK_DOCUMENTS);
-  const [isLoadingDocs, setIsLoadingDocs] = useState(false);
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [isLoadingDocs, setIsLoadingDocs] = useState(true);
 
   // Filters State
   const [filters, setFilters] = useState<FilterState>({
@@ -47,43 +45,24 @@ export default function DashboardPage() {
   const [docToDelete, setDocToDelete] = useState<DocumentItem | null>(null);
   const [docToView, setDocToView] = useState<DocumentItem | null>(null);
 
-  // 1. Authenticate & Fetch Profile
+  // 1. Strict Authenticate & Fetch Profile
   useEffect(() => {
     let authListener: { unsubscribe: () => void } | null = null;
 
     async function loadUser() {
       try {
-        if (!supabaseConfigured) {
-          // Check local storage for demo user
-          const stored = localStorage.getItem("siikan_demo_user");
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            const role: UserRole = getRoleFromEmail(parsed.email);
-            setCurrentUser({ ...parsed, role });
-          } else {
-            setCurrentUser({
-              id: "demo-admin-id",
-              email: "admin.dkp@gunungkidulkab.go.id",
-              full_name: "Admin DKP Gunungkidul",
-              role: "Admin",
-            });
-          }
-          setIsLoadingAuth(false);
-          return;
-        }
-
         const supabase = createClient();
         const {
           data: { session },
         } = await supabase.auth.getSession();
 
+        // Strict: If not authenticated, redirect to /login immediately
         if (!session?.user) {
           router.push("/login");
           return;
         }
 
         const userEmail = session.user.email || "";
-        // Strict authorization: email containing "admin" => 'Admin', else 'User'
         const roleFromEmail = getRoleFromEmail(userEmail);
 
         // Fetch user profile from 'profiles' table if it exists
@@ -122,6 +101,7 @@ export default function DashboardPage() {
         authListener = authData.subscription;
       } catch (err) {
         console.error("Error loading user profile:", err);
+        router.push("/login");
       } finally {
         setIsLoadingAuth(false);
       }
@@ -132,25 +112,10 @@ export default function DashboardPage() {
     return () => {
       authListener?.unsubscribe();
     };
-  }, [supabaseConfigured, router]);
+  }, [router]);
 
-  // 2. Fetch Documents from Supabase or Local Storage
+  // 2. Fetch Real Documents strictly from Supabase
   const fetchDocuments = async () => {
-    if (!supabaseConfigured) {
-      // Check local storage for saved documents
-      const savedDocs = localStorage.getItem("siikan_documents");
-      if (savedDocs) {
-        try {
-          setDocuments(JSON.parse(savedDocs));
-        } catch {
-          setDocuments(INITIAL_MOCK_DOCUMENTS);
-        }
-      } else {
-        setDocuments(INITIAL_MOCK_DOCUMENTS);
-      }
-      return;
-    }
-
     try {
       setIsLoadingDocs(true);
       const supabase = createClient();
@@ -163,15 +128,11 @@ export default function DashboardPage() {
         throw error;
       }
 
-      if (data && data.length > 0) {
-        setDocuments(data as DocumentItem[]);
-      } else {
-        setDocuments(INITIAL_MOCK_DOCUMENTS);
-      }
+      setDocuments((data as DocumentItem[]) || []);
     } catch (err: any) {
       console.error("Failed to fetch documents from Supabase:", err);
-      toast.error("Gagal mengambil data dari Supabase. Menampilkan data lokal.");
-      setDocuments(INITIAL_MOCK_DOCUMENTS);
+      toast.error("Gagal mengambil data arsip dari Supabase.");
+      setDocuments([]);
     } finally {
       setIsLoadingDocs(false);
     }
@@ -179,7 +140,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchDocuments();
-  }, [supabaseConfigured]);
+  }, []);
 
   // 3. Filtered Documents Logic
   const filteredDocuments = useMemo(() => {
@@ -205,12 +166,8 @@ export default function DashboardPage() {
 
   // 4. Logout Handler
   const handleLogout = async () => {
-    if (supabaseConfigured) {
-      const supabase = createClient();
-      await supabase.auth.signOut();
-    } else {
-      localStorage.removeItem("siikan_demo_user");
-    }
+    const supabase = createClient();
+    await supabase.auth.signOut();
     toast.info("Anda telah keluar dari SI-IKAN.");
     router.push("/login");
   };
@@ -218,7 +175,6 @@ export default function DashboardPage() {
   // 5. Handle Download
   const handleDownload = (doc: DocumentItem) => {
     toast.success(`Memulai unduhan: ${doc.title}`);
-    // Trigger download
     const link = document.createElement("a");
     link.href = doc.file_url;
     link.download = doc.title;
@@ -229,7 +185,7 @@ export default function DashboardPage() {
     document.body.removeChild(link);
   };
 
-  // 7. Handle Delete Document (Admin Only)
+  // 6. Handle Delete Document (Admin Only)
   const handleConfirmDelete = async (doc: DocumentItem) => {
     if (currentUser?.role !== "Admin") {
       toast.error("Hanya Administrator yang berwenang menghapus dokumen.");
@@ -237,41 +193,34 @@ export default function DashboardPage() {
     }
 
     try {
-      if (supabaseConfigured) {
-        const supabase = createClient();
-        
-        // 1. Delete from database
-        const { error: dbError } = await supabase
-          .from("documents")
-          .delete()
-          .eq("id", doc.id);
+      const supabase = createClient();
+      
+      // 1. Delete from database
+      const { error: dbError } = await supabase
+        .from("documents")
+        .delete()
+        .eq("id", doc.id);
 
-        if (dbError) throw dbError;
+      if (dbError) throw dbError;
 
-        // 2. Optionally delete from storage if file_url is a Supabase path
-        if (doc.file_url.includes("/storage/v1/object/public/documents/")) {
-          const filePath = doc.file_url.split("/documents/")[1];
-          if (filePath) {
-            await supabase.storage.from("documents").remove([filePath]);
-          }
+      // 2. Delete from Supabase storage if file path is in documents bucket
+      if (doc.file_url.includes("/storage/v1/object/public/documents/")) {
+        const filePath = doc.file_url.split("/documents/")[1];
+        if (filePath) {
+          await supabase.storage.from("documents").remove([filePath]);
         }
       }
 
-      // Update local state
-      const updatedDocs = documents.filter((d) => d.id !== doc.id);
-      setDocuments(updatedDocs);
-      if (!supabaseConfigured) {
-        localStorage.setItem("siikan_documents", JSON.stringify(updatedDocs));
-      }
-
+      // Update state
+      setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
       toast.success(`Dokumen "${doc.title}" berhasil dihapus.`);
     } catch (err: any) {
       console.error("Delete error:", err);
-      toast.error(err.message || "Gagal menghapus dokumen dari server.");
+      toast.error(err.message || "Gagal menghapus dokumen dari server Supabase.");
     }
   };
 
-  // 8. Handle Upload New Document (Admin Only)
+  // 7. Handle Upload New Document (Admin Only)
   const handleUploadSuccess = async ({
     file,
     title,
@@ -288,9 +237,7 @@ export default function DashboardPage() {
       return;
     }
 
-    let fileUrl = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf";
-
-    if (supabaseConfigured) {
+    try {
       const supabase = createClient();
       
       // Sanitized filename for storage
@@ -318,7 +265,7 @@ export default function DashboardPage() {
         .from("documents")
         .getPublicUrl(filePath);
 
-      fileUrl = urlData.publicUrl;
+      const fileUrl = urlData.publicUrl;
 
       // Insert record to 'documents' table
       const { data: newDbDoc, error: dbError } = await supabase
@@ -341,26 +288,29 @@ export default function DashboardPage() {
       if (newDbDoc) {
         setDocuments((prev) => [newDbDoc as DocumentItem, ...prev]);
       }
-    } else {
-      // Local fallback simulation
-      const newDoc: DocumentItem = {
-        id: `mock-${Date.now()}`,
-        title,
-        category,
-        year,
-        file_url: URL.createObjectURL(file),
-        file_size: file.size,
-        created_at: new Date().toISOString(),
-      };
-      const updatedDocs = [newDoc, ...documents];
-      setDocuments(updatedDocs);
-      localStorage.setItem("siikan_documents", JSON.stringify(updatedDocs));
-    }
 
-    toast.success(`Dokumen "${title}" berhasil diunggah!`);
+      toast.success(`Dokumen "${title}" berhasil diunggah ke Supabase!`);
+    } catch (err: any) {
+      console.error("Upload error:", err);
+      toast.error(err.message || "Gagal mengunggah dokumen.");
+      throw err;
+    }
   };
 
   const isAdmin = currentUser?.role === "Admin";
+
+  if (isLoadingAuth) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-900 text-white">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-9 w-9 animate-spin rounded-full border-3 border-emerald-500 border-t-transparent" />
+          <p className="text-sm font-medium text-emerald-200">
+            Memverifikasi autentikasi sesi SI-IKAN...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50/80 dark:bg-slate-950">
@@ -368,28 +318,15 @@ export default function DashboardPage() {
       <Header
         user={currentUser}
         onLogout={handleLogout}
-        isMockMode={!supabaseConfigured}
       />
 
       {/* Main Container */}
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-7">
-        {/* Banner Alert for offline/demo configuration */}
-        {!supabaseConfigured && (
-          <div className="flex items-center justify-between rounded-xl border border-emerald-300/80 bg-emerald-50 px-4 py-3 text-xs text-emerald-900 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-emerald-600 shrink-0" />
-              <span>
-                <strong>Mode Pratinjau Interaktif Aktif:</strong> Anda dapat menguji seluruh fungsi pencarian, filter, unduh, hapus, dan unggah dokumen PDF secara langsung. Hubungkan variabel Supabase di <code className="font-mono font-semibold">.env.local</code> untuk sinkronisasi cloud penuh.
-              </span>
-            </div>
-          </div>
-        )}
-
         {/* Dashboard Title & Admin Upload Action Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-50 sm:text-3xl">
-              Repositori Dokumen Perencanaan & Kinerja
+              Repositori Dokumen Keuangan, Anggaran & Perencanaan
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
               Kelola dan telusuri dokumen DPA, LPPD, LKJIP, RENJA, RENSTRA, dan laporan lainnya secara terpadu.

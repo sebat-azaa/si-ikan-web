@@ -8,11 +8,19 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-  if (!url || !key || url.includes('your-project-id')) {
-    // If Supabase is not yet configured, allow demo access so user can view UI and test
+  const isLoginPage = request.nextUrl.pathname.startsWith('/login');
+  const isAuthCallback = request.nextUrl.pathname.startsWith('/auth');
+
+  if (!url || !key) {
+    // If Supabase URL/Key is missing on the server, redirect to login if not already there
+    if (!isLoginPage && !isAuthCallback) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = '/login';
+      return NextResponse.redirect(redirectUrl);
+    }
     return response;
   }
 
@@ -46,19 +54,16 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Route protection
-  const isLoginPage = request.nextUrl.pathname.startsWith('/login');
-  const isAuthCallback = request.nextUrl.pathname.startsWith('/auth');
-
+  // Strict route protection
   if (!user && !isLoginPage && !isAuthCallback) {
-    // Unauthenticated user attempting to access protected route
+    // Unauthenticated user attempting to access protected route -> Redirect to /login
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = '/login';
     return NextResponse.redirect(redirectUrl);
   }
 
   if (user && isLoginPage) {
-    // Authenticated user trying to access login page
+    // Authenticated user trying to access login page -> Redirect to /
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = '/';
     return NextResponse.redirect(redirectUrl);

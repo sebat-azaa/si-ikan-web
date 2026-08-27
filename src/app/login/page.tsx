@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/client";
 import { APP_CONFIG } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,6 @@ import {
   AlertCircle,
   Loader2,
   FileText,
-  CheckCircle,
   HelpCircle,
   UserCheck,
 } from "lucide-react";
@@ -27,39 +27,21 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const supabaseConfigured = isSupabaseConfigured();
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
-    if (!email || !password) {
-      setErrorMessage("Silakan masukkan email dan kata sandi.");
+    if (!email.trim() || !password) {
+      setErrorMessage("Silakan masukkan email dan kata sandi kedinasan Anda.");
       return;
     }
 
     setIsLoading(true);
 
     try {
-      if (!supabaseConfigured) {
-        // If Supabase credentials are not yet set in .env.local, use local session simulation
-        toast.info("Mode Demo/Pengujian Aktif: Masuk tanpa koneksi live Supabase.");
-        const role = email.toLowerCase().includes("admin") ? "Admin" : "User";
-        localStorage.setItem(
-          "siikan_demo_user",
-          JSON.stringify({
-            id: "demo-user-id",
-            email,
-            role,
-          })
-        );
-        router.push("/");
-        return;
-      }
-
       const supabase = createClient();
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim(),
         password,
       });
 
@@ -71,11 +53,14 @@ export default function LoginPage() {
       router.push("/");
       router.refresh();
     } catch (err: any) {
-      setErrorMessage(
-        err.message === "Invalid login credentials"
-          ? "Kombinasi email atau kata sandi salah. Silakan periksa kembali."
-          : err.message || "Terjadi kesalahan saat masuk ke sistem."
-      );
+      console.error("Login error:", err);
+      if (err.message === "Invalid login credentials") {
+        setErrorMessage("Kombinasi email atau kata sandi tidak sesuai. Silakan periksa kembali.");
+      } else if (err.message?.includes("Email not confirmed")) {
+        setErrorMessage("Email belum dikonfirmasi. Silakan periksa kotak masuk email Anda.");
+      } else {
+        setErrorMessage(err.message || "Terjadi kesalahan saat masuk ke sistem Supabase.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -101,27 +86,19 @@ export default function LoginPage() {
         <div className="absolute -right-20 -top-20 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
 
         {/* Top Header */}
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 p-0.5 shadow-lg shadow-emerald-950/50">
-            <div className="flex h-full w-full items-center justify-center rounded-[10px] bg-emerald-950 text-white">
-              <svg
-                className="h-7 w-7 text-emerald-300"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.46-3.44 6-7 6-3.56 0-7.56-2.54-8.5-6Z" />
-                <path d="M18 12h.01" />
-                <path d="M2 16c1.5-2 3.5-2 5 0 1.5 2 3.5 2 5 0" />
-                <path d="M2 8c1.5-2 3.5-2 5 0 1.5 2 3.5 2 5 0" />
-              </svg>
-            </div>
+        <div className="relative z-10 flex items-center gap-3.5">
+          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-white/10 p-1.5 shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-300/30 backdrop-blur-sm">
+            <Image
+              src="/logo.svg"
+              alt="Logo Gunungkidul"
+              width={56}
+              height={56}
+              priority
+              className="h-11 w-auto object-contain drop-shadow-md"
+            />
           </div>
           <div>
-            <h1 className="text-xl font-black tracking-tight text-white">
+            <h1 className="text-2xl font-black tracking-wide text-white sm:text-3xl">
               {APP_CONFIG.name}
             </h1>
             <p className="text-xs font-medium text-emerald-300">
@@ -138,7 +115,7 @@ export default function LoginPage() {
           </div>
 
           <h2 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl lg:text-5xl leading-tight">
-            Sistem Informasi Integrasi Kinerja, Anggaran & Perencanaan
+            Sistem Informasi Integrasi Keuangan, Anggaran & Perencanaan
           </h2>
 
           <p className="text-sm sm:text-base text-emerald-100/80 max-w-xl leading-relaxed">
@@ -240,7 +217,7 @@ export default function LoginPage() {
               {isLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Memverifikasi...
+                  Memverifikasi Akun Supabase...
                 </>
               ) : (
                 "Masuk ke Portal"
@@ -248,14 +225,14 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          {/* Quick Demo Credentials Box */}
+          {/* Quick Demo Credentials Box (Auto-fills inputs for convenience) */}
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/30">
             <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900 dark:text-emerald-300 mb-2">
               <HelpCircle className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400" />
-              <span>Akses Cepat Mode Uji Coba:</span>
+              <span>Bantuan Pengisian Cepat Form:</span>
             </div>
             <p className="text-[11px] text-emerald-800/80 dark:text-emerald-400/80 mb-3">
-              Klik salah satu tombol di bawah untuk mengisi kredensial contoh secara otomatis:
+              Klik opsi berikut untuk mengisi otomatis form login:
             </p>
             <div className="grid grid-cols-2 gap-2">
               <Button
@@ -265,7 +242,7 @@ export default function LoginPage() {
                 onClick={() => handleQuickFill("Admin")}
                 className="text-xs bg-white border-emerald-300 text-emerald-800 hover:bg-emerald-100 font-medium"
               >
-                Akun Admin (CRUD)
+                Format Email Admin
               </Button>
               <Button
                 type="button"
@@ -274,7 +251,7 @@ export default function LoginPage() {
                 onClick={() => handleQuickFill("User")}
                 className="text-xs bg-white border-emerald-300 text-emerald-800 hover:bg-emerald-100 font-medium"
               >
-                Akun Pegawai (Read Only)
+                Format Email Pegawai
               </Button>
             </div>
           </div>

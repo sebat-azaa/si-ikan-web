@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "SI-IKAN - Dinas Kelautan dan Perikanan Kab. Gunungkidul",
   description:
-    "Sistem Informasi Integrasi Kinerja, Anggaran dan Perencanaan (SI-IKAN) - Dinas Kelautan dan Perikanan Kabupaten Gunungkidul",
+    "Sistem Informasi Integrasi Keuangan, Anggaran & Perencanaan (SI-IKAN) - Dinas Kelautan dan Perikanan Kabupaten Gunungkidul",
   keywords: [
     "SI-IKAN",
     "DKP Gunungkidul",
