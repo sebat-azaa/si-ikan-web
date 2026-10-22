@@ -6,7 +6,7 @@ import { Header } from "@/components/Header";
 import { StatsCards } from "@/components/StatsCards";
 import { DocumentFilters } from "@/components/DocumentFilters";
 import { DocumentTable } from "@/components/DocumentTable";
-import { UploadModal } from "@/components/UploadModal";
+import { UploadModal, UploadBatchItem, UploadProgress } from "@/components/UploadModal";
 import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 import { PdfViewerModal } from "@/components/PdfViewerModal";
 import { EditDocumentModal } from "@/components/EditDocumentModal";
@@ -322,84 +322,107 @@ export default function DashboardPage() {
     }
   };
 
-  // 7. Handle Upload New Document (Admin Only)
-  const handleUploadSuccess = async ({
-    file,
-    title,
-    category,
-    year,
-  }: {
-    file: File;
-    title: string;
-    category: DocumentCategory;
-    year: string;
-  }) => {
+  // 7. Handle Upload Batch / Single Documents (Admin Only)
+  const handleUploadBatch = async (
+    items: UploadBatchItem[],
+    onProgress?: (progress: UploadProgress) => void
+  ) => {
     if (currentUser?.role !== "Admin") {
       toast.error("Hanya Administrator yang memiliki izin mengunggah dokumen.");
       return;
     }
 
-    try {
-      const supabase = createClient();
-      
-      // Sanitized filename for storage
-      const fileExt = file.name.split(".").pop();
-      const sanitizedName = title
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, "-")
-        .replace(/-+/g, "-");
-      const filePath = `${category}/${year}/${Date.now()}_${sanitizedName}.${fileExt}`;
+    const supabase = createClient();
+    const uploadedDocs: DocumentItem[] = [];
+    const errors: string[] = [];
 
-      // Upload to Supabase Storage bucket 'documents'
-      const { data: storageData, error: storageError } = await supabase.storage
-        .from("documents")
-        .upload(filePath, file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      onProgress?.({
+        current: i + 1,
+        total: items.length,
+        currentFileName: item.file.name,
+      });
 
-      if (storageError) {
-        throw new Error(`Gagal mengunggah ke Storage: ${storageError.message}`);
+      try {
+        const fileExt = item.file.name.split(".").pop() || "pdf";
+        const sanitizedName = item.title
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "-")
+          .replace(/-+/g, "-");
+        const filePath = `${item.category}/${item.year}/${Date.now()}_${i}_${sanitizedName}.${fileExt}`;
+
+        // 1. Upload to Supabase Storage bucket 'documents'
+        const { error: storageError } = await supabase.storage
+          .from("documents")
+          .upload(filePath, item.file, {
+            cacheControl: "3600",
+            upsert: false,
+          });
+
+        if (storageError) {
+          throw new Error(`Gagal ke Storage: ${storageError.message}`);
+        }
+
+        // 2. Get public URL
+        const { data: urlData } = supabase.storage
+          .from("documents")
+          .getPublicUrl(filePath);
+
+        const fileUrl = urlData.publicUrl;
+
+        // 3. Insert record to 'documents' table
+        const { data: newDbDoc, error: dbError } = await supabase
+          .from("documents")
+          .insert({
+            title: item.title,
+            category: item.category,
+            year: item.year,
+            file_url: fileUrl,
+            file_size: item.file.size,
+            created_by: currentUser?.id,
+          })
+          .select()
+          .single();
+
+        if (dbError) {
+          throw new Error(`Gagal ke Database: ${dbError.message}`);
+        }
+
+        if (newDbDoc) {
+          uploadedDocs.push(newDbDoc as DocumentItem);
+        }
+      } catch (err: any) {
+        console.error(`Gagal mengunggah file ${item.file.name}:`, err);
+        errors.push(`${item.file.name}: ${err.message}`);
       }
+    }
 
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from("documents")
-        .getPublicUrl(filePath);
+    // Update documents state immediately
+    if (uploadedDocs.length > 0) {
+      setDocuments((prev) => [...uploadedDocs, ...prev]);
 
-      const fileUrl = urlData.publicUrl;
+      // Update categories state if needed
+      setCategories((prev) => {
+        const batchCategories = items.map((it) => it.category);
+        return Array.from(new Set([...prev, ...batchCategories]));
+      });
+    }
 
-      // Insert record to 'documents' table
-      const { data: newDbDoc, error: dbError } = await supabase
-        .from("documents")
-        .insert({
-          title,
-          category,
-          year,
-          file_url: fileUrl,
-          file_size: file.size,
-          created_by: currentUser?.id,
-        })
-        .select()
-        .single();
-
-      if (dbError) {
-        throw new Error(`Gagal menyimpan data ke database: ${dbError.message}`);
+    if (errors.length > 0) {
+      if (uploadedDocs.length > 0) {
+        toast.warning(
+          `Berhasil mengunggah ${uploadedDocs.length} berkas. ${errors.length} berkas gagal.`
+        );
+      } else {
+        throw new Error(`Gagal mengunggah berkas: ${errors.join(", ")}`);
       }
-
-      if (newDbDoc) {
-        setDocuments((prev) => [newDbDoc as DocumentItem, ...prev]);
-        setCategories((prev) => {
-          if (prev.includes(category)) return prev;
-          return [...prev, category];
-        });
-      }
-
-      toast.success(`Dokumen "${title}" berhasil diunggah ke Supabase!`);
-    } catch (err: any) {
-      console.error("Upload error:", err);
-      toast.error(err.message || "Gagal mengunggah dokumen.");
-      throw err;
+    } else {
+      toast.success(
+        items.length === 1
+          ? `Dokumen "${items[0].title}" berhasil diunggah ke Supabase!`
+          : `Berhasil mengunggah ${uploadedDocs.length} berkas PDF ke repositori SI-IKAN!`
+      );
     }
   };
 
@@ -655,7 +678,7 @@ export default function DashboardPage() {
         <UploadModal
           open={isUploadModalOpen}
           onOpenChange={setIsUploadModalOpen}
-          onUploadSuccess={handleUploadSuccess}
+          onUploadBatch={handleUploadBatch}
           availableCategories={categories}
           onAddNewCategory={handleAddCategory}
         />

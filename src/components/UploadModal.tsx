@@ -1,25 +1,57 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
+import {
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Select } from "./ui/select";
 import { DOCUMENT_CATEGORIES, DOCUMENT_YEARS } from "@/lib/constants";
 import { DocumentCategory } from "@/lib/types";
 import { formatBytes } from "@/lib/utils";
-import { UploadCloud, FileText, CheckCircle2, AlertCircle, X, Loader2, Plus, Check, Tag } from "lucide-react";
+import {
+  UploadCloud,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
+  X,
+  Loader2,
+  Plus,
+  Check,
+  Tag,
+  FolderUp,
+  FolderArchive,
+  Files,
+  Info,
+} from "lucide-react";
 import { toast } from "sonner";
+
+export interface UploadBatchItem {
+  file: File;
+  title: string;
+  category: DocumentCategory;
+  year: string;
+}
+
+export interface UploadProgress {
+  current: number;
+  total: number;
+  currentFileName: string;
+}
 
 interface UploadModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onUploadSuccess: (newDoc: {
-    file: File;
-    title: string;
-    category: DocumentCategory;
-    year: string;
-  }) => Promise<void>;
+  onUploadSuccess?: (newDoc: UploadBatchItem) => Promise<void>;
+  onUploadBatch?: (
+    items: UploadBatchItem[],
+    onProgress?: (progress: UploadProgress) => void
+  ) => Promise<void>;
   availableCategories?: string[];
   onAddNewCategory?: (newCategory: string) => Promise<void> | void;
 }
@@ -28,6 +60,7 @@ export function UploadModal({
   open,
   onOpenChange,
   onUploadSuccess,
+  onUploadBatch,
   availableCategories,
   onAddNewCategory,
 }: UploadModalProps) {
@@ -36,12 +69,25 @@ export function UploadModal({
     new Set([...(availableCategories || DOCUMENT_CATEGORIES), ...localCustomCategories])
   );
 
+  // Upload Mode: 'single' (File Tunggal) or 'folder' (Folder / Bulk PDFs)
+  const [uploadMode, setUploadMode] = useState<"single" | "folder">("single");
+
+  // Single File State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
+
+  // Folder / Multiple PDFs State
+  const [selectedFolderFiles, setSelectedFolderFiles] = useState<File[]>([]);
+  const [filteredOutCount, setFilteredOutCount] = useState(0);
+
+  // Common Metadata
   const [category, setCategory] = useState<string>("DPA");
   const [year, setYear] = useState("2025");
+
+  // UI / Submission States
   const [isDragging, setIsDragging] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // New Category Creation States
@@ -50,18 +96,27 @@ export function UploadModal({
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [isSavingCategory, setIsSavingCategory] = useState(false);
 
+  // Input Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const multiFileInputRef = useRef<HTMLInputElement>(null);
 
   const resetForm = () => {
     setSelectedFile(null);
+    setSelectedFolderFiles([]);
+    setFilteredOutCount(0);
     setTitle("");
     setCategory(categoriesList[0] || "DPA");
     setYear("2025");
     setErrorMsg(null);
     setIsSubmitting(false);
+    setUploadProgress(null);
     setIsAddingCategory(false);
     setNewCategoryInput("");
     setCategoryError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (folderInputRef.current) folderInputRef.current.value = "";
+    if (multiFileInputRef.current) multiFileInputRef.current.value = "";
   };
 
   const handleClose = () => {
@@ -115,14 +170,13 @@ export function UploadModal({
     }
   };
 
+  // 1. Single File Selection Handler
   const handleFileSelection = (file: File) => {
-    // PDF Validation Check
     if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
       setErrorMsg("Hanya file format PDF (.pdf) yang diperbolehkan.");
       return;
     }
 
-    // Size limit check (max 50MB)
     if (file.size > 50 * 1024 * 1024) {
       setErrorMsg("Ukuran file tidak boleh melebihi 50 MB.");
       return;
@@ -130,47 +184,127 @@ export function UploadModal({
 
     setErrorMsg(null);
     setSelectedFile(file);
-    // Autofill title if empty
     if (!title.trim()) {
       setTitle(file.name);
     }
   };
 
+  // 2. Folder & Multi-File Selection Handler (Filters ONLY .pdf files)
+  const handleFolderSelection = (filesList: FileList | File[]) => {
+    const rawFiles = Array.from(filesList);
+    if (rawFiles.length === 0) return;
+
+    // Filter ONLY .pdf files (ignore other formats: docx, xlsx, images, etc.)
+    const pdfFiles = rawFiles.filter(
+      (file) =>
+        file.type === "application/pdf" ||
+        file.name.toLowerCase().endsWith(".pdf")
+    );
+
+    const nonPdfCount = rawFiles.length - pdfFiles.length;
+    setFilteredOutCount(nonPdfCount);
+
+    if (pdfFiles.length === 0) {
+      setErrorMsg(
+        `Tidak ditemukan file format PDF (.pdf) di dalam folder yang dipilih. ${nonPdfCount} file non-PDF telah diabaikan.`
+      );
+      setSelectedFolderFiles([]);
+      return;
+    }
+
+    // Check size limit (max 50MB per file)
+    const oversizedFiles = pdfFiles.filter((f) => f.size > 50 * 1024 * 1024);
+    if (oversizedFiles.length > 0) {
+      setErrorMsg(
+        `Terdapat ${oversizedFiles.length} file PDF yang melebihi batas 50 MB.`
+      );
+      return;
+    }
+
+    setErrorMsg(null);
+    setSelectedFolderFiles(pdfFiles);
+  };
+
+  // Drag & drop handler
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileSelection(e.dataTransfer.files[0]);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      if (uploadMode === "folder" || e.dataTransfer.files.length > 1) {
+        setUploadMode("folder");
+        handleFolderSelection(e.dataTransfer.files);
+      } else {
+        handleFileSelection(e.dataTransfer.files[0]);
+      }
     }
   };
 
+  // Form Submit Handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedFile) {
-      setErrorMsg("Silakan pilih berkas PDF terlebih dahulu.");
-      return;
-    }
-    if (!title.trim()) {
-      setErrorMsg("Nama / Judul Dokumen tidak boleh kosong.");
-      return;
+
+    let itemsToUpload: UploadBatchItem[] = [];
+
+    if (uploadMode === "single") {
+      if (!selectedFile) {
+        setErrorMsg("Silakan pilih berkas PDF terlebih dahulu.");
+        return;
+      }
+      if (!title.trim()) {
+        setErrorMsg("Nama / Judul Dokumen tidak boleh kosong.");
+        return;
+      }
+      itemsToUpload = [
+        {
+          file: selectedFile,
+          title: title.trim(),
+          category: category as DocumentCategory,
+          year,
+        },
+      ];
+    } else {
+      // Folder / Bulk mode
+      if (selectedFolderFiles.length === 0) {
+        setErrorMsg("Silakan pilih folder berisi berkas PDF terlebih dahulu.");
+        return;
+      }
+      // Use each file's original name as the document title
+      itemsToUpload = selectedFolderFiles.map((file) => ({
+        file,
+        title: file.name,
+        category: category as DocumentCategory,
+        year,
+      }));
     }
 
     try {
       setIsSubmitting(true);
       setErrorMsg(null);
-      await onUploadSuccess({
-        file: selectedFile,
-        title: title.trim(),
-        category,
-        year,
+      setUploadProgress({
+        current: 0,
+        total: itemsToUpload.length,
+        currentFileName: itemsToUpload[0].file.name,
       });
+
+      if (onUploadBatch) {
+        await onUploadBatch(itemsToUpload, (prog) => {
+          setUploadProgress(prog);
+        });
+      } else if (onUploadSuccess && itemsToUpload.length === 1) {
+        await onUploadSuccess(itemsToUpload[0]);
+      }
+
       handleClose();
     } catch (err: any) {
       setErrorMsg(err?.message || "Gagal mengunggah dokumen. Silakan coba lagi.");
     } finally {
       setIsSubmitting(false);
+      setUploadProgress(null);
     }
   };
+
+  const totalFolderSize = selectedFolderFiles.reduce((acc, f) => acc + f.size, 0);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -180,15 +314,51 @@ export function UploadModal({
             <UploadCloud className="h-5 w-5" />
           </div>
           <div>
-            <DialogTitle>Unggah Dokumen Arsip Baru</DialogTitle>
+            <DialogTitle>Unggah Dokumen Arsip</DialogTitle>
             <DialogDescription>
-              Tambahkan laporan kinerja, anggaran, atau perencanaan ke dalam repositori SI-IKAN.
+              Unggah laporan arsip perorangan atau seluruh folder berisi berkas PDF sekaligus ke repositori SI-IKAN.
             </DialogDescription>
           </div>
         </div>
       </DialogHeader>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Upload Mode Switcher (Single File vs Folder / Bulk) */}
+        <div className="flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+          <button
+            type="button"
+            disabled={isSubmitting}
+            onClick={() => {
+              setUploadMode("single");
+              setErrorMsg(null);
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              uploadMode === "single"
+                ? "bg-white text-emerald-800 shadow-sm dark:bg-slate-900 dark:text-emerald-300"
+                : "text-slate-500 hover:text-slate-800 dark:text-slate-400"
+            }`}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            <span>Berkas Tunggal</span>
+          </button>
+          <button
+            type="button"
+            disabled={isSubmitting}
+            onClick={() => {
+              setUploadMode("folder");
+              setErrorMsg(null);
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-bold rounded-lg transition-all ${
+              uploadMode === "folder"
+                ? "bg-white text-emerald-800 shadow-sm dark:bg-slate-900 dark:text-emerald-300"
+                : "text-slate-500 hover:text-slate-800 dark:text-slate-400"
+            }`}
+          >
+            <FolderUp className="h-3.5 w-3.5" />
+            <span>Unggah Folder (Banyak PDF)</span>
+          </button>
+        </div>
+
         {/* Error Alert */}
         {errorMsg && (
           <div className="flex items-center gap-2 rounded-lg bg-rose-50 p-3 text-xs font-medium text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300">
@@ -197,97 +367,274 @@ export function UploadModal({
           </div>
         )}
 
-        {/* PDF File Picker / Drag & Drop Area */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-            Berkas PDF <span className="text-rose-500">*</span>
-          </label>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="application/pdf,.pdf"
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files && e.target.files[0]) {
-                handleFileSelection(e.target.files[0]);
-              }
-            }}
-          />
-
-          {!selectedFile ? (
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-all ${
-                isDragging
-                  ? "border-emerald-500 bg-emerald-50/70"
-                  : "border-slate-300 hover:border-emerald-500 hover:bg-slate-50/80 dark:border-slate-700 dark:hover:bg-slate-800/40"
-              }`}
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 mb-2 dark:bg-emerald-950 dark:text-emerald-400">
-                <UploadCloud className="h-6 w-6" />
-              </div>
-              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                Klik untuk memilih file atau seret file PDF ke sini
-              </p>
-              <p className="text-xs text-slate-400 mt-1">
-                Format yang didukung: <span className="font-semibold text-slate-600 dark:text-slate-300">PDF (.pdf)</span>, Maksimal 50 MB
-              </p>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3.5 dark:border-emerald-900 dark:bg-emerald-950/40">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600">
-                  <FileText className="h-5 w-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-bold text-slate-800 dark:text-slate-100">
-                    {selectedFile.name}
-                  </p>
-                  <p className="text-[11px] text-slate-500 font-mono">
-                    {formatBytes(selectedFile.size)} • PDF siap diunggah
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedFile(null);
-                  if (fileInputRef.current) fileInputRef.current.value = "";
+        {/* MODE 1: SINGLE FILE UPLOAD */}
+        {uploadMode === "single" && (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Berkas PDF <span className="text-rose-500">*</span>
+              </label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                disabled={isSubmitting}
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleFileSelection(e.target.files[0]);
+                  }
                 }}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition"
-                title="Batalkan pilihan file"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              />
+
+              {!selectedFile ? (
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-all ${
+                    isDragging
+                      ? "border-emerald-500 bg-emerald-50/70"
+                      : "border-slate-300 hover:border-emerald-500 hover:bg-slate-50/80 dark:border-slate-700 dark:hover:bg-slate-800/40"
+                  }`}
+                >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 mb-2 dark:bg-emerald-950 dark:text-emerald-400">
+                    <UploadCloud className="h-5 w-5" />
+                  </div>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    Klik untuk memilih file PDF atau seret ke sini
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Format: <span className="font-semibold text-slate-600 dark:text-slate-300">PDF (.pdf)</span>, Maksimal 50 MB
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/60 p-3.5 dark:border-emerald-900 dark:bg-emerald-950/40">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600">
+                      <FileText className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-bold text-slate-800 dark:text-slate-100">
+                        {selectedFile.name}
+                      </p>
+                      <p className="text-[11px] text-slate-500 font-mono">
+                        {formatBytes(selectedFile.size)} • PDF siap diunggah
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      setSelectedFile(null);
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition"
+                    title="Batalkan pilihan file"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        {/* Title Input */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-            Nama / Judul Dokumen <span className="text-rose-500">*</span>
-          </label>
-          <Input
-            type="text"
-            placeholder="Contoh: DPA-SKPD_DKP_Gunungkidul_TA_2025_Final.pdf"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            className="text-sm font-medium"
-          />
-          <p className="text-[11px] text-slate-400">
-            Gunakan format penamaan standar kedinasan agar mudah dicari.
-          </p>
-        </div>
+            {/* Title Input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Nama / Judul Dokumen <span className="text-rose-500">*</span>
+              </label>
+              <Input
+                type="text"
+                placeholder="Contoh: DPA-SKPD_DKP_Gunungkidul_TA_2025_Final.pdf"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                disabled={isSubmitting}
+                required
+                className="text-sm font-medium"
+              />
+              <p className="text-[11px] text-slate-400">
+                Gunakan format penamaan standar kedinasan agar mudah dicari.
+              </p>
+            </div>
+          </div>
+        )}
 
-        {/* Category & Year Row */}
+        {/* MODE 2: FOLDER (BULK PDF) UPLOAD */}
+        {uploadMode === "folder" && (
+          <div className="space-y-3">
+            {/* Hidden Input for Folder selection (using webkitdirectory and directory attributes) */}
+            <input
+              ref={folderInputRef}
+              type="file"
+              multiple
+              {...({ webkitdirectory: "", directory: "" } as any)}
+              className="hidden"
+              disabled={isSubmitting}
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                  handleFolderSelection(e.target.files);
+                }
+              }}
+            />
+
+            {/* Hidden Input for Multi-file fallback selection */}
+            <input
+              ref={multiFileInputRef}
+              type="file"
+              multiple
+              accept="application/pdf,.pdf"
+              className="hidden"
+              disabled={isSubmitting}
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                  handleFolderSelection(e.target.files);
+                }
+              }}
+            />
+
+            {selectedFolderFiles.length === 0 ? (
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 text-center transition-all ${
+                  isDragging
+                    ? "border-emerald-500 bg-emerald-50/70"
+                    : "border-slate-300 bg-slate-50/50 hover:border-emerald-500 dark:border-slate-700 dark:bg-slate-900/40"
+                }`}
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-100 text-teal-700 mb-2 dark:bg-teal-950 dark:text-teal-400 shadow-sm">
+                  <FolderUp className="h-6 w-6" />
+                </div>
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                  Pilih Folder Berisi Berkas PDF
+                </p>
+                <p className="text-xs text-slate-500 max-w-sm mt-1">
+                  Sistem akan secara otomatis memindai seluruh folder dan menyaring <strong>hanya file PDF</strong>. Berkas selain PDF akan otomatis diabaikan.
+                </p>
+
+                {/* Folder & Multi-File Trigger Buttons */}
+                <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+                  <Button
+                    type="button"
+                    variant="gov"
+                    size="sm"
+                    disabled={isSubmitting}
+                    onClick={() => folderInputRef.current?.click()}
+                    className="gap-1.5 font-bold shadow-sm"
+                  >
+                    <FolderArchive className="h-4 w-4" />
+                    <span>Pilih Folder</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isSubmitting}
+                    onClick={() => multiFileInputRef.current?.click()}
+                    className="gap-1.5 font-semibold text-xs"
+                  >
+                    <Files className="h-4 w-4 text-slate-600" />
+                    <span>Pilih Banyak File PDF</span>
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              /* Selected Folder Summary and Files Preview */
+              <div className="space-y-2.5">
+                {/* Summary Card */}
+                <div className="flex items-center justify-between rounded-xl border border-emerald-300 bg-emerald-50/70 p-3.5 dark:border-emerald-800 dark:bg-emerald-950/40">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-sm">
+                      <FolderArchive className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-emerald-950 dark:text-emerald-100 flex items-center gap-1.5">
+                        <span>{selectedFolderFiles.length} File PDF Siap Diunggah</span>
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                      </p>
+                      <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono">
+                        Total Ukuran: {formatBytes(totalFolderSize)}
+                        {filteredOutCount > 0 && (
+                          <span className="text-slate-500 ml-1.5">
+                            ({filteredOutCount} file non-PDF diabaikan)
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      setSelectedFolderFiles([]);
+                      setFilteredOutCount(0);
+                      if (folderInputRef.current) folderInputRef.current.value = "";
+                      if (multiFileInputRef.current) multiFileInputRef.current.value = "";
+                    }}
+                    className="rounded-lg px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-100 transition"
+                  >
+                    Pilih Ulang
+                  </button>
+                </div>
+
+                {/* Scrollable File List Preview */}
+                <div className="rounded-xl border border-slate-200 bg-white/90 p-2.5 dark:border-slate-800 dark:bg-slate-900/80 shadow-sm">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 px-1 border-b border-slate-100 dark:border-slate-800 pb-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-emerald-600" />
+                      Daftar Berkas Terpilih ({selectedFolderFiles.length})
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      Format: .PDF
+                    </span>
+                  </div>
+
+                  <div className="max-h-36 overflow-y-auto space-y-1 pr-1 divide-y divide-slate-100 dark:divide-slate-800/80">
+                    {selectedFolderFiles.map((file, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between py-1 px-1 text-xs"
+                      >
+                        <div className="flex items-center gap-2 truncate pr-2">
+                          <span className="text-[10px] font-bold text-slate-400 font-mono w-5 shrink-0">
+                            {idx + 1}.
+                          </span>
+                          <FileText className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                          <span className="truncate font-medium text-slate-800 dark:text-slate-200">
+                            {file.name}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-mono text-slate-400 shrink-0">
+                          {formatBytes(file.size)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Auto Title Notice */}
+                <div className="rounded-lg bg-slate-50 border border-slate-200 p-2 text-xs text-slate-600 dark:bg-slate-900/60 dark:border-slate-800 dark:text-slate-400 flex items-center gap-2">
+                  <Info className="h-4 w-4 shrink-0 text-emerald-600" />
+                  <span>
+                    <strong>Judul Otomatis:</strong> Nama asli masing-masing file akan digunakan sebagai judul dokumen di repositori.
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Category & Year Row (Shared by both modes) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           {/* Category Dropdown & Custom Category Input */}
           <div className="space-y-1.5">
@@ -298,6 +645,7 @@ export function UploadModal({
               {!isAddingCategory ? (
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => {
                     setIsAddingCategory(true);
                     setNewCategoryInput("");
@@ -320,6 +668,7 @@ export function UploadModal({
             {!isAddingCategory ? (
               <Select
                 value={category}
+                disabled={isSubmitting}
                 onChange={(e) => {
                   if (e.target.value === "__NEW_CATEGORY__") {
                     setIsAddingCategory(true);
@@ -415,6 +764,7 @@ export function UploadModal({
             </label>
             <Select
               value={year}
+              disabled={isSubmitting}
               onChange={(e) => setYear(e.target.value)}
               required
             >
@@ -426,6 +776,42 @@ export function UploadModal({
             </Select>
           </div>
         </div>
+
+        {/* Progress Bar / UX Feedback during Upload */}
+        {isSubmitting && uploadProgress && (
+          <div className="rounded-xl border border-emerald-300 bg-emerald-50/90 p-3.5 space-y-2 dark:border-emerald-800 dark:bg-emerald-950/60 animate-in fade-in">
+            <div className="flex items-center justify-between text-xs font-bold text-emerald-950 dark:text-emerald-100">
+              <span className="flex items-center gap-1.5">
+                <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+                Mengunggah Dokumen: {uploadProgress.current} dari {uploadProgress.total} file
+              </span>
+              <span className="font-mono text-emerald-700 dark:text-emerald-300">
+                {uploadProgress.total > 0
+                  ? Math.round((uploadProgress.current / uploadProgress.total) * 100)
+                  : 0}
+                %
+              </span>
+            </div>
+            <div className="w-full bg-emerald-200/60 rounded-full h-2.5 dark:bg-emerald-900/60 overflow-hidden">
+              <div
+                className="bg-emerald-600 h-2.5 rounded-full transition-all duration-300 ease-out"
+                style={{
+                  width: `${
+                    uploadProgress.total > 0
+                      ? Math.round((uploadProgress.current / uploadProgress.total) * 100)
+                      : 0
+                  }%`,
+                }}
+              />
+            </div>
+            <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate">
+              Sedang memproses:{" "}
+              <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
+                {uploadProgress.currentFileName}
+              </span>
+            </p>
+          </div>
+        )}
 
         {/* Footer actions */}
         <DialogFooter>
@@ -440,18 +826,28 @@ export function UploadModal({
           <Button
             type="submit"
             variant="gov"
-            disabled={isSubmitting || !selectedFile || !title.trim()}
-            className="min-w-[140px]"
+            disabled={
+              isSubmitting ||
+              (uploadMode === "single" && (!selectedFile || !title.trim())) ||
+              (uploadMode === "folder" && selectedFolderFiles.length === 0)
+            }
+            className="min-w-[160px]"
           >
             {isSubmitting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Mengunggah...
+                {uploadProgress && uploadProgress.total > 1
+                  ? `Mengunggah (${uploadProgress.current}/${uploadProgress.total})...`
+                  : "Mengunggah..."}
               </>
             ) : (
               <>
                 <UploadCloud className="h-4 w-4 mr-2" />
-                Simpan Dokumen
+                {uploadMode === "single"
+                  ? "Simpan Dokumen"
+                  : selectedFolderFiles.length > 0
+                  ? `Simpan ${selectedFolderFiles.length} Dokumen Sekaligus`
+                  : "Simpan Semua Dokumen"}
               </>
             )}
           </Button>
