@@ -127,6 +127,21 @@ CREATE POLICY "Only Admins can insert categories"
   TO authenticated
   WITH CHECK (public.is_admin());
 
+-- Only Admins can update/rename categories
+CREATE POLICY "Only Admins can update categories"
+  ON public.categories
+  FOR UPDATE
+  TO authenticated
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+-- Only Admins can delete categories
+CREATE POLICY "Only Admins can delete categories"
+  ON public.categories
+  FOR DELETE
+  TO authenticated
+  USING (public.is_admin());
+
 -- Default Categories Seed
 INSERT INTO public.categories (name) VALUES
   ('DPA'),
@@ -155,12 +170,41 @@ CREATE POLICY "Only Admins can insert documents"
   TO authenticated
   WITH CHECK (public.is_admin());
 
+-- Only Admins can update documents (Metadata: title, category, year)
+CREATE POLICY "Only Admins can update documents"
+  ON public.documents
+  FOR UPDATE
+  TO authenticated
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
 -- Only Admins can delete documents
 CREATE POLICY "Only Admins can delete documents"
   ON public.documents
   FOR DELETE
   TO authenticated
   USING (public.is_admin());
+
+-- 6. RPC: Cascading Category Rename Function
+CREATE OR REPLACE FUNCTION public.rename_category(old_name TEXT, new_name TEXT)
+RETURNS VOID AS $$
+BEGIN
+  -- Verify caller is admin
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Izin ditolak: Hanya Administrator yang dapat mengubah nama kategori.';
+  END IF;
+
+  -- 1. Update category name in categories table
+  UPDATE public.categories
+  SET name = new_name
+  WHERE name = old_name;
+
+  -- 2. Cascade update all existing documents with this category
+  UPDATE public.documents
+  SET category = new_name
+  WHERE category = old_name;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 6. SUPABASE STORAGE SETUP
 -- Create the 'documents' storage bucket

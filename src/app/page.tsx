@@ -9,6 +9,8 @@ import { DocumentTable } from "@/components/DocumentTable";
 import { UploadModal } from "@/components/UploadModal";
 import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 import { PdfViewerModal } from "@/components/PdfViewerModal";
+import { EditDocumentModal } from "@/components/EditDocumentModal";
+import { ManageCategoriesModal } from "@/components/ManageCategoriesModal";
 import { Button } from "@/components/ui/button";
 import { DOCUMENT_CATEGORIES } from "@/lib/constants";
 import {
@@ -20,7 +22,7 @@ import {
 } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { getRoleFromEmail } from "@/lib/utils";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, Tag } from "lucide-react";
 import { toast } from "sonner";
 
 export default function DashboardPage() {
@@ -43,7 +45,9 @@ export default function DashboardPage() {
 
   // Modal States
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isManageCategoriesOpen, setIsManageCategoriesOpen] = useState(false);
   const [docToDelete, setDocToDelete] = useState<DocumentItem | null>(null);
+  const [docToEdit, setDocToEdit] = useState<DocumentItem | null>(null);
   const [docToView, setDocToView] = useState<DocumentItem | null>(null);
 
   // Dynamic Categories State
@@ -399,6 +403,156 @@ export default function DashboardPage() {
     }
   };
 
+  // 8. Handle Edit Document Metadata (Admin Only)
+  const handleEditDocumentSuccess = async ({
+    id,
+    title,
+    category,
+    year,
+  }: {
+    id: string;
+    title: string;
+    category: DocumentCategory;
+    year: string;
+  }) => {
+    if (currentUser?.role !== "Admin") {
+      toast.error("Hanya Administrator yang memiliki izin mengedit dokumen.");
+      return;
+    }
+
+    try {
+      const supabase = createClient();
+      const { data: updatedDoc, error } = await supabase
+        .from("documents")
+        .update({
+          title,
+          category,
+          year,
+        })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(`Gagal memperbarui data di database: ${error.message}`);
+      }
+
+      // Update state immediately
+      if (updatedDoc) {
+        setDocuments((prev) =>
+          prev.map((doc) => (doc.id === id ? (updatedDoc as DocumentItem) : doc))
+        );
+      }
+
+      // Ensure category is in categories list
+      setCategories((prev) => {
+        if (prev.includes(category)) return prev;
+        return [...prev, category];
+      });
+
+      toast.success(`Rincian dokumen "${title}" berhasil diperbarui!`);
+    } catch (err: any) {
+      console.error("Edit document error:", err);
+      toast.error(err.message || "Gagal memperbarui rincian dokumen.");
+      throw err;
+    }
+  };
+
+  // 9. Handle Rename Category with Cascading Update (Admin Only)
+  const handleRenameCategory = async (oldCategory: string, newCategory: string) => {
+    if (currentUser?.role !== "Admin") {
+      toast.error("Hanya Administrator yang memiliki izin mengubah kategori.");
+      return;
+    }
+
+    const formattedOld = oldCategory.trim().toUpperCase();
+    const formattedNew = newCategory.trim().toUpperCase();
+
+    if (!formattedNew || formattedOld === formattedNew) return;
+
+    try {
+      const supabase = createClient();
+
+      // 1. Attempt stored procedure 'rename_category' (cascading update)
+      let rpcSucceeded = false;
+      try {
+        const { error: rpcError } = await supabase.rpc("rename_category", {
+          old_name: formattedOld,
+          new_name: formattedNew,
+        });
+        if (!rpcError) {
+          rpcSucceeded = true;
+        } else {
+          console.warn("RPC rename_category note/fallback:", rpcError.message);
+        }
+      } catch (e) {
+        console.warn("RPC rename_category exception, falling back to direct table updates:", e);
+      }
+
+      // 2. If RPC was not available, run direct cascading table updates
+      if (!rpcSucceeded) {
+        // Update categories table
+        await supabase
+          .from("categories")
+          .update({ name: formattedNew })
+          .eq("name", formattedOld);
+
+        // Cascade update documents table
+        const { error: docUpdateError } = await supabase
+          .from("documents")
+          .update({ category: formattedNew })
+          .eq("category", formattedOld);
+
+        if (docUpdateError) {
+          throw new Error(`Gagal memperbarui dokumen berantai: ${docUpdateError.message}`);
+        }
+      }
+
+      // 3. Update frontend category list immediately
+      setCategories((prev) =>
+        prev.map((c) => (c === formattedOld ? formattedNew : c))
+      );
+
+      // 4. Update documents state immediately (all docs with old category get new category)
+      setDocuments((prev) =>
+        prev.map((doc) =>
+          doc.category === formattedOld
+            ? { ...doc, category: formattedNew as DocumentCategory }
+            : doc
+        )
+      );
+
+      // 5. If active filter was set to the renamed category, update filter seamlessly
+      setFilters((prev) =>
+        prev.category === formattedOld
+          ? { ...prev, category: formattedNew as DocumentCategory }
+          : prev
+      );
+
+      // 6. Update localStorage persistent cache
+      if (typeof window !== "undefined") {
+        try {
+          const raw = localStorage.getItem("siikan_custom_categories");
+          if (raw) {
+            const saved = JSON.parse(raw) as string[];
+            const updated = saved.map((c) => (c === formattedOld ? formattedNew : c));
+            localStorage.setItem("siikan_custom_categories", JSON.stringify(updated));
+          }
+        } catch (e) {
+          console.warn("Failed updating localStorage categories:", e);
+        }
+      }
+
+      toast.success(
+        `Kategori "${formattedOld}" berhasil diubah menjadi "${formattedNew}" dan semua dokumen terkait telah diperbarui!`
+      );
+    } catch (err: any) {
+      console.error("Rename category error:", err);
+      toast.error(err.message || "Gagal mengubah nama kategori.");
+      throw err;
+    }
+  };
+
   const isAdmin = currentUser?.role === "Admin";
 
   if (isLoadingAuth) {
@@ -435,9 +589,19 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          {/* Admin Upload Document Button (Hidden for User role) */}
+          {/* Admin Action Buttons (Hidden for User role) */}
           {isAdmin && (
             <div className="flex items-center gap-2.5">
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={() => setIsManageCategoriesOpen(true)}
+                className="gap-2 font-bold bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm dark:bg-slate-900 dark:text-slate-200 dark:border-slate-700"
+                title="Kelola & Ubah Nama Kategori"
+              >
+                <Tag className="h-4 w-4 text-emerald-600" />
+                <span>Kelola Kategori</span>
+              </Button>
               <Button
                 variant="gov"
                 size="lg"
@@ -468,6 +632,8 @@ export default function DashboardPage() {
             })
           }
           categories={categories}
+          isAdmin={isAdmin}
+          onManageCategories={() => setIsManageCategoriesOpen(true)}
           totalResults={filteredDocuments.length}
           totalAll={documents.length}
         />
@@ -478,6 +644,7 @@ export default function DashboardPage() {
           userRole={currentUser?.role || "User"}
           onDownload={handleDownload}
           onDelete={(doc) => setDocToDelete(doc)}
+          onEdit={(doc) => setDocToEdit(doc)}
           onView={(doc) => window.open(doc.file_url, "_blank", "noopener,noreferrer")}
           isLoading={isLoadingDocs}
         />
@@ -491,6 +658,28 @@ export default function DashboardPage() {
           onUploadSuccess={handleUploadSuccess}
           availableCategories={categories}
           onAddNewCategory={handleAddCategory}
+        />
+      )}
+
+      {/* Admin Edit Document Modal */}
+      {isAdmin && (
+        <EditDocumentModal
+          document={docToEdit}
+          open={Boolean(docToEdit)}
+          onOpenChange={(open) => !open && setDocToEdit(null)}
+          onSaveSuccess={handleEditDocumentSuccess}
+          availableCategories={categories}
+        />
+      )}
+
+      {/* Admin Manage Categories Modal */}
+      {isAdmin && (
+        <ManageCategoriesModal
+          open={isManageCategoriesOpen}
+          onOpenChange={setIsManageCategoriesOpen}
+          categories={categories}
+          documents={documents}
+          onRenameCategory={handleRenameCategory}
         />
       )}
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Search, Filter, Calendar, RotateCcw, FileSpreadsheet } from "lucide-react";
+import { Search, Filter, Calendar, RotateCcw, FileSpreadsheet, Tag } from "lucide-react";
 import { Input } from "./ui/input";
 import { Select } from "./ui/select";
 import { Button } from "./ui/button";
@@ -15,6 +15,8 @@ interface DocumentFiltersProps {
   totalResults: number;
   totalAll: number;
   categories?: string[];
+  isAdmin?: boolean;
+  onManageCategories?: () => void;
 }
 
 export function DocumentFilters({
@@ -24,6 +26,8 @@ export function DocumentFilters({
   totalResults,
   totalAll,
   categories,
+  isAdmin = false,
+  onManageCategories,
 }: DocumentFiltersProps) {
   const categoriesList = categories && categories.length > 0 ? categories : DOCUMENT_CATEGORIES;
   const isFiltered =
@@ -54,10 +58,23 @@ export function DocumentFilters({
 
         {/* Category Dropdown Filter */}
         <div className="lg:col-span-3 flex flex-col space-y-1.5">
-          <label className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
-            <Filter className="h-3.5 w-3.5 text-emerald-600" />
-            Kategori Laporan
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+              <Filter className="h-3.5 w-3.5 text-emerald-600" />
+              Kategori Laporan
+            </label>
+            {isAdmin && onManageCategories && (
+              <button
+                type="button"
+                onClick={onManageCategories}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300 transition-colors"
+                title="Kelola & Ubah Nama Kategori"
+              >
+                <Tag className="h-3 w-3" />
+                <span>Kelola</span>
+              </button>
+            )}
+          </div>
           <Select
             value={filters.category}
             onChange={(e) =>

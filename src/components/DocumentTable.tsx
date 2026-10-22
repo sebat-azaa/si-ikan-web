@@ -14,6 +14,7 @@ import {
   FileQuestion,
   FileCheck,
   Eye,
+  Pencil,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -23,6 +24,7 @@ interface DocumentTableProps {
   userRole: UserRole;
   onDownload: (doc: DocumentItem) => void;
   onDelete?: (doc: DocumentItem) => void;
+  onEdit?: (doc: DocumentItem) => void;
   onView?: (doc: DocumentItem) => void;
   isLoading?: boolean;
 }
@@ -32,6 +34,7 @@ export function DocumentTable({
   userRole,
   onDownload,
   onDelete,
+  onEdit,
   onView,
   isLoading = false,
 }: DocumentTableProps) {
@@ -115,7 +118,7 @@ export function DocumentTable({
               <th scope="col" className="px-5 py-3.5 font-semibold w-36">
                 Tanggal Unggah
               </th>
-              <th scope="col" className="px-5 py-3.5 text-center font-semibold w-56">
+              <th scope="col" className="px-5 py-3.5 text-center font-semibold w-72">
                 Aksi
               </th>
             </tr>
@@ -215,6 +218,20 @@ export function DocumentTable({
                         <Download className="h-3.5 w-3.5" />
                         <span>Unduh</span>
                       </Button>
+
+                      {/* Edit Button (STRICTLY Admin Only) */}
+                      {isAdmin && onEdit && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onEdit(doc)}
+                          className="h-8 border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 hover:text-amber-900 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300 text-xs gap-1 shadow-none"
+                          title="Ubah rincian metadata dokumen"
+                        >
+                          <Pencil className="h-3.5 w-3.5 text-amber-600" />
+                          <span>Edit</span>
+                        </Button>
+                      )}
 
                       {/* Delete Button (STRICTLY Admin Only) */}
                       {isAdmin && onDelete && (
