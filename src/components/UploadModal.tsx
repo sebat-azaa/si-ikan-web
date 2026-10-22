@@ -8,7 +8,8 @@ import { Select } from "./ui/select";
 import { DOCUMENT_CATEGORIES, DOCUMENT_YEARS } from "@/lib/constants";
 import { DocumentCategory } from "@/lib/types";
 import { formatBytes } from "@/lib/utils";
-import { UploadCloud, FileText, CheckCircle2, AlertCircle, X, Loader2 } from "lucide-react";
+import { UploadCloud, FileText, CheckCircle2, AlertCircle, X, Loader2, Plus, Check, Tag } from "lucide-react";
+import { toast } from "sonner";
 
 interface UploadModalProps {
   open: boolean;
@@ -19,36 +20,99 @@ interface UploadModalProps {
     category: DocumentCategory;
     year: string;
   }) => Promise<void>;
+  availableCategories?: string[];
+  onAddNewCategory?: (newCategory: string) => Promise<void> | void;
 }
 
 export function UploadModal({
   open,
   onOpenChange,
   onUploadSuccess,
+  availableCategories,
+  onAddNewCategory,
 }: UploadModalProps) {
+  const [localCustomCategories, setLocalCustomCategories] = useState<string[]>([]);
+  const categoriesList = Array.from(
+    new Set([...(availableCategories || DOCUMENT_CATEGORIES), ...localCustomCategories])
+  );
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<DocumentCategory>("DPA");
+  const [category, setCategory] = useState<string>("DPA");
   const [year, setYear] = useState("2025");
   const [isDragging, setIsDragging] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // New Category Creation States
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState("");
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const resetForm = () => {
     setSelectedFile(null);
     setTitle("");
-    setCategory("DPA");
+    setCategory(categoriesList[0] || "DPA");
     setYear("2025");
     setErrorMsg(null);
     setIsSubmitting(false);
+    setIsAddingCategory(false);
+    setNewCategoryInput("");
+    setCategoryError(null);
   };
 
   const handleClose = () => {
     if (isSubmitting) return;
     resetForm();
     onOpenChange(false);
+  };
+
+  const handleConfirmNewCategory = async () => {
+    const trimmed = newCategoryInput.trim();
+    if (!trimmed) {
+      setCategoryError("Nama kategori tidak boleh kosong.");
+      return;
+    }
+    if (trimmed.length < 2) {
+      setCategoryError("Nama kategori minimal 2 karakter.");
+      return;
+    }
+
+    const formatted = trimmed.toUpperCase();
+
+    // Check if category already exists in current list
+    const existing = categoriesList.find(
+      (c) => c.toLowerCase() === formatted.toLowerCase()
+    );
+
+    if (existing) {
+      setCategory(existing);
+      setIsAddingCategory(false);
+      setNewCategoryInput("");
+      setCategoryError(null);
+      toast.info(`Kategori "${existing}" sudah ada dan otomatis dipilih.`);
+      return;
+    }
+
+    try {
+      setIsSavingCategory(true);
+      if (onAddNewCategory) {
+        await onAddNewCategory(formatted);
+      }
+      setLocalCustomCategories((prev) => [...prev, formatted]);
+      setCategory(formatted);
+      setIsAddingCategory(false);
+      setNewCategoryInput("");
+      setCategoryError(null);
+      toast.success(`Kategori "${formatted}" berhasil ditambahkan dan dipilih!`);
+    } catch (err: any) {
+      setCategoryError(err?.message || "Gagal menambahkan kategori baru.");
+    } finally {
+      setIsSavingCategory(false);
+    }
   };
 
   const handleFileSelection = (file: File) => {
@@ -225,22 +289,123 @@ export function UploadModal({
 
         {/* Category & Year Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-          {/* Category Dropdown */}
+          {/* Category Dropdown & Custom Category Input */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              Kategori Dokumen <span className="text-rose-500">*</span>
-            </label>
-            <Select
-              value={category}
-              onChange={(e) => setCategory(e.target.value as DocumentCategory)}
-              required
-            >
-              {DOCUMENT_CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                Kategori Dokumen <span className="text-rose-500">*</span>
+              </label>
+              {!isAddingCategory ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddingCategory(true);
+                    setNewCategoryInput("");
+                    setCategoryError(null);
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300 transition-colors"
+                  title="Tambah kategori baru jika belum tersedia di daftar"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>+ Tambah Baru</span>
+                </button>
+              ) : (
+                <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                  <Tag className="h-3 w-3" />
+                  Tambah Kategori
+                </span>
+              )}
+            </div>
+
+            {!isAddingCategory ? (
+              <Select
+                value={category}
+                onChange={(e) => {
+                  if (e.target.value === "__NEW_CATEGORY__") {
+                    setIsAddingCategory(true);
+                    setNewCategoryInput("");
+                    setCategoryError(null);
+                  } else {
+                    setCategory(e.target.value);
+                  }
+                }}
+                required
+              >
+                {categoriesList.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+                <option value="__NEW_CATEGORY__" className="font-semibold text-emerald-700">
+                  + Tambah Kategori Baru...
                 </option>
-              ))}
-            </Select>
+              </Select>
+            ) : (
+              <div className="rounded-xl border border-emerald-300 bg-emerald-50/70 p-2 space-y-1.5 dark:border-emerald-800 dark:bg-emerald-950/40 animate-in fade-in-50 duration-200">
+                <div className="flex gap-1.5">
+                  <Input
+                    type="text"
+                    placeholder="Nama kategori baru..."
+                    value={newCategoryInput}
+                    onChange={(e) => {
+                      setNewCategoryInput(e.target.value);
+                      if (categoryError) setCategoryError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleConfirmNewCategory();
+                      } else if (e.key === "Escape") {
+                        setIsAddingCategory(false);
+                        setNewCategoryInput("");
+                        setCategoryError(null);
+                      }
+                    }}
+                    autoFocus
+                    className="h-8 text-xs bg-white dark:bg-slate-900 font-semibold uppercase tracking-wide focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <Button
+                    type="button"
+                    variant="gov"
+                    size="sm"
+                    onClick={handleConfirmNewCategory}
+                    disabled={!newCategoryInput.trim() || isSavingCategory}
+                    className="h-8 px-2.5 text-xs font-bold shrink-0 gap-1 shadow-sm"
+                    title="Simpan kategori baru"
+                  >
+                    {isSavingCategory ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Check className="h-3.5 w-3.5" />
+                    )}
+                    <span>Simpan</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setIsAddingCategory(false);
+                      setNewCategoryInput("");
+                      setCategoryError(null);
+                    }}
+                    disabled={isSavingCategory}
+                    className="h-8 px-2 text-xs text-slate-500 hover:text-slate-700 shrink-0"
+                    title="Batal"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                {categoryError && (
+                  <p className="text-[11px] font-medium text-rose-600 dark:text-rose-400">
+                    {categoryError}
+                  </p>
+                )}
+                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                  Tekan <kbd className="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-800 font-mono text-[9px]">Enter</kbd> untuk simpan, <kbd className="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-800 font-mono text-[9px]">Esc</kbd> untuk batal.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Year Dropdown */}

@@ -29,7 +29,7 @@ export const DOCUMENT_YEARS: string[] = [
   '2028',
 ];
 
-export const CATEGORY_STYLES: Record<DocumentCategory, { bg: string; text: string; border: string }> = {
+export const CATEGORY_STYLES: Record<string, { bg: string; text: string; border: string }> = {
   'DPA': {
     bg: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300',
     text: 'text-emerald-700',
@@ -76,3 +76,25 @@ export const CATEGORY_STYLES: Record<DocumentCategory, { bg: string; text: strin
     border: 'border-rose-200 dark:border-rose-800',
   },
 };
+
+const DYNAMIC_PALETTES = [
+  { bg: 'bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300', text: 'text-violet-700', border: 'border-violet-200 dark:border-violet-800' },
+  { bg: 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-950/50 dark:text-fuchsia-300', text: 'text-fuchsia-700', border: 'border-fuchsia-200 dark:border-fuchsia-800' },
+  { bg: 'bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300', text: 'text-sky-700', border: 'border-sky-200 dark:border-sky-800' },
+  { bg: 'bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300', text: 'text-orange-700', border: 'border-orange-200 dark:border-orange-800' },
+  { bg: 'bg-lime-50 text-lime-700 dark:bg-lime-950/50 dark:text-lime-300', text: 'text-lime-700', border: 'border-lime-200 dark:border-lime-800' },
+  { bg: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300', text: 'text-slate-700', border: 'border-slate-300 dark:border-slate-700' },
+];
+
+export function getCategoryBadgeStyle(category: string): { bg: string; text: string; border: string } {
+  if (CATEGORY_STYLES[category]) {
+    return CATEGORY_STYLES[category];
+  }
+  // Deterministic color selection for custom categories
+  let hash = 0;
+  for (let i = 0; i < category.length; i++) {
+    hash = category.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % DYNAMIC_PALETTES.length;
+  return DYNAMIC_PALETTES[index];
+}

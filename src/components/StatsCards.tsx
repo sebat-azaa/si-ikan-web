@@ -4,9 +4,10 @@ import { DocumentItem } from "@/lib/types";
 
 interface StatsCardsProps {
   documents: DocumentItem[];
+  totalCategories?: number;
 }
 
-export function StatsCards({ documents }: StatsCardsProps) {
+export function StatsCards({ documents, totalCategories }: StatsCardsProps) {
   const totalDocs = documents.length;
   const categoriesCount = new Set(documents.map((d) => d.category)).size;
   const yearsCount = new Set(documents.map((d) => d.year)).size;
@@ -51,7 +52,7 @@ export function StatsCards({ documents }: StatsCardsProps) {
               {categoriesCount}
             </span>
             <span className="text-xs font-medium text-teal-700 dark:text-teal-400">
-              / 9 Kategori
+              / {totalCategories || 9} Kategori
             </span>
           </div>
         </div>

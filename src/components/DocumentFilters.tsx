@@ -14,6 +14,7 @@ interface DocumentFiltersProps {
   onReset: () => void;
   totalResults: number;
   totalAll: number;
+  categories?: string[];
 }
 
 export function DocumentFilters({
@@ -22,7 +23,9 @@ export function DocumentFilters({
   onReset,
   totalResults,
   totalAll,
+  categories,
 }: DocumentFiltersProps) {
+  const categoriesList = categories && categories.length > 0 ? categories : DOCUMENT_CATEGORIES;
   const isFiltered =
     filters.searchQuery.trim() !== "" ||
     filters.category !== "ALL" ||
@@ -64,8 +67,8 @@ export function DocumentFilters({
             }
             className="bg-slate-50/50 border-slate-300 focus:bg-white text-sm"
           >
-            <option value="ALL">Semua Kategori ({DOCUMENT_CATEGORIES.length})</option>
-            {DOCUMENT_CATEGORIES.map((cat) => (
+            <option value="ALL">Semua Kategori ({categoriesList.length})</option>
+            {categoriesList.map((cat) => (
               <option key={cat} value={cat}>
                 {cat}
               </option>

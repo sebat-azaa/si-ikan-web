@@ -3,6 +3,19 @@
 -- Dinas Kelautan dan Perikanan Kabupaten Gunungkidul
 -- ==============================================================================
 
+-- Seed Default Categories
+INSERT INTO public.categories (name) VALUES
+  ('DPA'),
+  ('LAPORAN KEUANGAN DAN CALK'),
+  ('LKJIP'),
+  ('LPPD'),
+  ('MONEV'),
+  ('PERJANJIAN KINERJA'),
+  ('RENJA'),
+  ('RENSTRA'),
+  ('RKA')
+ON CONFLICT (name) DO NOTHING;
+
 -- Sample Document Records (Government Reports across categories & years)
 INSERT INTO public.documents (id, title, category, year, file_url, file_size, created_at)
 VALUES

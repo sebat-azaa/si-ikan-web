@@ -1,4 +1,4 @@
-export type DocumentCategory =
+export type DefaultDocumentCategory =
   | 'DPA'
   | 'LAPORAN KEUANGAN DAN CALK'
   | 'LKJIP'
@@ -8,6 +8,8 @@ export type DocumentCategory =
   | 'RENJA'
   | 'RENSTRA'
   | 'RKA';
+
+export type DocumentCategory = DefaultDocumentCategory | (string & {});
 
 export type UserRole = 'Admin' | 'User';
 

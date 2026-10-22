@@ -17,27 +17,30 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- Enable RLS on profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
--- 2. Create DOCUMENTS Table
+-- 2. Create CATEGORIES Table (Supports Dynamic Custom Categories)
+CREATE TABLE IF NOT EXISTS public.categories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- Enable RLS on categories
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+
+-- 3. Create DOCUMENTS Table
 CREATE TABLE IF NOT EXISTS public.documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
-    category TEXT NOT NULL CHECK (category IN (
-        'DPA',
-        'LAPORAN KEUANGAN DAN CALK',
-        'LKJIP',
-        'LPPD',
-        'MONEV',
-        'PERJANJIAN KINERJA',
-        'RENJA',
-        'RENSTRA',
-        'RKA'
-    )),
+    category TEXT NOT NULL,
     year TEXT NOT NULL,
     file_url TEXT NOT NULL,
     file_size BIGINT DEFAULT 0,
     created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+
+-- Drop previous hardcoded check constraint on documents.category if it exists
+ALTER TABLE public.documents DROP CONSTRAINT IF EXISTS documents_category_check;
 
 -- Enable RLS on documents
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
@@ -108,6 +111,34 @@ CREATE POLICY "Users can update own profile name"
   TO authenticated
   USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id AND role = (SELECT role FROM public.profiles WHERE id = auth.uid()));
+
+-- Categories RLS Policies:
+-- Any authenticated user can view categories
+CREATE POLICY "Authenticated users can view categories"
+  ON public.categories
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- Only Admins can insert new categories
+CREATE POLICY "Only Admins can insert categories"
+  ON public.categories
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (public.is_admin());
+
+-- Default Categories Seed
+INSERT INTO public.categories (name) VALUES
+  ('DPA'),
+  ('LAPORAN KEUANGAN DAN CALK'),
+  ('LKJIP'),
+  ('LPPD'),
+  ('MONEV'),
+  ('PERJANJIAN KINERJA'),
+  ('RENJA'),
+  ('RENSTRA'),
+  ('RKA')
+ON CONFLICT (name) DO NOTHING;
 
 -- Documents RLS Policies:
 -- Any authenticated user (Admin or User) can view/read documents

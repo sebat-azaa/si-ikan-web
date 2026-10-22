@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { DocumentItem, UserRole } from "@/lib/types";
-import { CATEGORY_STYLES } from "@/lib/constants";
+import { CATEGORY_STYLES, getCategoryBadgeStyle } from "@/lib/constants";
 import { formatDateIndo, formatBytes } from "@/lib/utils";
 import {
   FileText,
@@ -123,11 +123,7 @@ export function DocumentTable({
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-normal">
             {paginatedDocs.map((doc, index) => {
               const rowNumber = startIndex + index + 1;
-              const categoryStyle = CATEGORY_STYLES[doc.category] || {
-                bg: "bg-slate-100 text-slate-800",
-                text: "text-slate-800",
-                border: "border-slate-300",
-              };
+              const categoryStyle = getCategoryBadgeStyle(doc.category);
 
               return (
                 <tr

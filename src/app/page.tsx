@@ -10,6 +10,7 @@ import { UploadModal } from "@/components/UploadModal";
 import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 import { PdfViewerModal } from "@/components/PdfViewerModal";
 import { Button } from "@/components/ui/button";
+import { DOCUMENT_CATEGORIES } from "@/lib/constants";
 import {
   DocumentItem,
   DocumentCategory,
@@ -44,6 +45,9 @@ export default function DashboardPage() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [docToDelete, setDocToDelete] = useState<DocumentItem | null>(null);
   const [docToView, setDocToView] = useState<DocumentItem | null>(null);
+
+  // Dynamic Categories State
+  const [categories, setCategories] = useState<string[]>(DOCUMENT_CATEGORIES);
 
   // 1. Strict Authenticate & Fetch Profile
   useEffect(() => {
@@ -114,7 +118,98 @@ export default function DashboardPage() {
     };
   }, [router]);
 
-  // 2. Fetch Real Documents strictly from Supabase
+  // 2. Fetch Categories from Supabase, localStorage, and loaded documents
+  const fetchCategories = async (currentDocs: DocumentItem[] = []) => {
+    try {
+      const supabase = createClient();
+      let dbCatNames: string[] = [];
+
+      try {
+        const { data: catData, error: catError } = await supabase
+          .from("categories")
+          .select("name")
+          .order("name", { ascending: true });
+
+        if (!catError && catData) {
+          dbCatNames = catData.map((c) => c.name);
+        }
+      } catch (e) {
+        // Categories table might not exist yet; fallback silently
+      }
+
+      // Check localStorage for persisted categories
+      let localCatNames: string[] = [];
+      if (typeof window !== "undefined") {
+        try {
+          const raw = localStorage.getItem("siikan_custom_categories");
+          if (raw) {
+            localCatNames = JSON.parse(raw);
+          }
+        } catch (e) {
+          // ignore parsing error
+        }
+      }
+
+      // Collect categories present in current documents
+      const docCatNames = currentDocs.map((d) => d.category).filter(Boolean);
+
+      const merged = Array.from(
+        new Set([
+          ...DOCUMENT_CATEGORIES,
+          ...dbCatNames,
+          ...localCatNames,
+          ...docCatNames,
+        ])
+      );
+
+      setCategories(merged);
+    } catch (err) {
+      console.warn("Error fetching categories:", err);
+    }
+  };
+
+  // Add New Category Handler
+  const handleAddCategory = async (newCategory: string) => {
+    const formatted = newCategory.trim().toUpperCase();
+    if (!formatted) return;
+
+    // 1. Immediately update UI state
+    setCategories((prev) => {
+      if (prev.includes(formatted)) return prev;
+      return [...prev, formatted];
+    });
+
+    // 2. Persist to localStorage
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("siikan_custom_categories");
+        const existing = raw ? JSON.parse(raw) : [];
+        if (!existing.includes(formatted)) {
+          localStorage.setItem(
+            "siikan_custom_categories",
+            JSON.stringify([...existing, formatted])
+          );
+        }
+      } catch (err) {
+        console.warn("Failed to persist category to localStorage:", err);
+      }
+    }
+
+    // 3. Persist to Supabase 'categories' table if it exists
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("categories")
+        .insert({ name: formatted });
+      if (error && error.code !== "23505") {
+        console.warn("Could not insert category to Supabase table:", error.message);
+      }
+    } catch (err) {
+      console.warn("Failed to save category to Supabase table:", err);
+    }
+  };
+
+  // 3. Fetch Real Documents strictly from Supabase
   const fetchDocuments = async () => {
     try {
       setIsLoadingDocs(true);
@@ -128,11 +223,14 @@ export default function DashboardPage() {
         throw error;
       }
 
-      setDocuments((data as DocumentItem[]) || []);
+      const docs = (data as DocumentItem[]) || [];
+      setDocuments(docs);
+      await fetchCategories(docs);
     } catch (err: any) {
       console.error("Failed to fetch documents from Supabase:", err);
       toast.error("Gagal mengambil data arsip dari Supabase.");
       setDocuments([]);
+      await fetchCategories([]);
     } finally {
       setIsLoadingDocs(false);
     }
@@ -287,6 +385,10 @@ export default function DashboardPage() {
 
       if (newDbDoc) {
         setDocuments((prev) => [newDbDoc as DocumentItem, ...prev]);
+        setCategories((prev) => {
+          if (prev.includes(category)) return prev;
+          return [...prev, category];
+        });
       }
 
       toast.success(`Dokumen "${title}" berhasil diunggah ke Supabase!`);
@@ -350,7 +452,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Stats Overview */}
-        <StatsCards documents={documents} />
+        <StatsCards documents={documents} totalCategories={categories.length} />
 
         {/* Document Filters (Search Bar, Category Dropdown, Year Dropdown) */}
         <DocumentFilters
@@ -365,6 +467,7 @@ export default function DashboardPage() {
               year: "ALL",
             })
           }
+          categories={categories}
           totalResults={filteredDocuments.length}
           totalAll={documents.length}
         />
@@ -386,6 +489,8 @@ export default function DashboardPage() {
           open={isUploadModalOpen}
           onOpenChange={setIsUploadModalOpen}
           onUploadSuccess={handleUploadSuccess}
+          availableCategories={categories}
+          onAddNewCategory={handleAddCategory}
         />
       )}
 
