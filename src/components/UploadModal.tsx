@@ -802,7 +802,7 @@ export function UploadModal({
         )}
 
         <DialogFooter>
-          <Button type="submit" disabled={isSubmitting} variant="emerald">
+          <Button type="submit" disabled={isSubmitting} variant="default" className="bg-emerald-600 hover:bg-emerald-700 text-white">
             {isSubmitting ? "Mengunggah..." : "Unggah"}
           </Button>
           <Button type="button" variant="outline" onClick={handleClose} disabled={isSubmitting}>
