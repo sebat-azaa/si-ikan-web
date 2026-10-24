@@ -3,9 +3,16 @@
 import React, { useState } from "react";
 import { DocumentItem, UserRole } from "@/lib/types";
 import { CATEGORY_STYLES, getCategoryBadgeStyle } from "@/lib/constants";
-import { formatDateIndo, formatBytes } from "@/lib/utils";
+import {
+  formatDateIndo,
+  formatBytes,
+  isExcelFile,
+  getFileExtension,
+  getDocumentViewUrl,
+} from "@/lib/utils";
 import {
   FileText,
+  FileSpreadsheet,
   Download,
   Trash2,
   ExternalLink,
@@ -127,6 +134,8 @@ export function DocumentTable({
             {paginatedDocs.map((doc, index) => {
               const rowNumber = startIndex + index + 1;
               const categoryStyle = getCategoryBadgeStyle(doc.category);
+              const isExcel = isExcelFile(doc.title || doc.file_url);
+              const ext = (getFileExtension(doc.title || doc.file_url) || (isExcel ? "xlsx" : "pdf")).toUpperCase();
 
               return (
                 <tr
@@ -138,19 +147,31 @@ export function DocumentTable({
                     {rowNumber}
                   </td>
 
-                  {/* Title / File Name with PDF Icon & Size */}
+                  {/* Title / File Name with Dynamic PDF/Excel Icon & Size */}
                   <td className="px-5 py-4">
                     <div className="flex items-start gap-3">
-                      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-400">
-                        <FileText className="h-5 w-5" />
-                      </div>
+                      {isExcel ? (
+                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-400 shadow-sm">
+                          <FileSpreadsheet className="h-5 w-5" />
+                        </div>
+                      ) : (
+                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-400 shadow-sm">
+                          <FileText className="h-5 w-5" />
+                        </div>
+                      )}
                       <div className="flex flex-col min-w-0">
                         <span className="font-semibold text-slate-800 dark:text-slate-100 hover:text-emerald-700 transition leading-snug break-all sm:break-normal line-clamp-2">
                           {doc.title}
                         </span>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[11px] font-medium text-slate-400">
-                            PDF
+                          <span
+                            className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold font-mono ${
+                              isExcel
+                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300"
+                                : "bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300"
+                            }`}
+                          >
+                            {ext}
                           </span>
                           {doc.file_size ? (
                             <>
@@ -189,7 +210,7 @@ export function DocumentTable({
                   {/* Action Buttons */}
                   <td className="px-5 py-4 text-center whitespace-nowrap">
                     <div className="flex items-center justify-center gap-1.5">
-                      {/* Lihat / View Button (Opens in new tab) */}
+                      {/* Lihat / View Button (Opens in new tab; Office viewer for Excel, direct for PDF) */}
                       <Button
                         variant="outline"
                         size="sm"
@@ -197,11 +218,11 @@ export function DocumentTable({
                           if (onView) {
                             onView(doc);
                           } else {
-                            window.open(doc.file_url, "_blank", "noopener,noreferrer");
+                            window.open(getDocumentViewUrl(doc), "_blank", "noopener,noreferrer");
                           }
                         }}
                         className="h-8 border-slate-300 text-slate-700 bg-slate-50 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 text-xs gap-1 shadow-none"
-                        title="Lihat berkas PDF di tab baru"
+                        title={isExcel ? "Buka file Excel via Office Viewer di tab baru" : "Lihat berkas PDF di tab baru"}
                       >
                         <Eye className="h-3.5 w-3.5 text-slate-500" />
                         <span>Lihat</span>

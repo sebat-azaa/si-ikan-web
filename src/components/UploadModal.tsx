@@ -1,4 +1,4 @@
-"use client";
+// "use client"
 
 import React, { useState, useRef } from "react";
 import {
@@ -13,7 +13,7 @@ import { Input } from "./ui/input";
 import { Select } from "./ui/select";
 import { DOCUMENT_CATEGORIES, DOCUMENT_YEARS } from "@/lib/constants";
 import { DocumentCategory } from "@/lib/types";
-import { formatBytes } from "@/lib/utils";
+import { formatBytes, isSupportedDocument } from "@/lib/utils";
 import {
   UploadCloud,
   FileText,
@@ -69,14 +69,14 @@ export function UploadModal({
     new Set([...(availableCategories || DOCUMENT_CATEGORIES), ...localCustomCategories])
   );
 
-  // Upload Mode: 'single' (File Tunggal) or 'folder' (Folder / Bulk PDFs)
+  // Upload Mode: 'single' (File Tunggal) or 'folder' (Folder / Bulk)
   const [uploadMode, setUploadMode] = useState<"single" | "folder">("single");
 
   // Single File State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
 
-  // Folder / Multiple PDFs State
+  // Folder / Multiple Files State
   const [selectedFolderFiles, setSelectedFolderFiles] = useState<File[]>([]);
   const [filteredOutCount, setFilteredOutCount] = useState(0);
 
@@ -172,8 +172,10 @@ export function UploadModal({
 
   // 1. Single File Selection Handler
   const handleFileSelection = (file: File) => {
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-      setErrorMsg("Hanya file format PDF (.pdf) yang diperbolehkan.");
+    if (!isSupportedDocument(file)) {
+      setErrorMsg(
+        "Hanya file format PDF, Excel (.pdf, .xlsx, .xls) yang diperbolehkan."
+      );
       return;
     }
 
@@ -189,40 +191,33 @@ export function UploadModal({
     }
   };
 
-  // 2. Folder & Multi-File Selection Handler (Filters ONLY .pdf files)
+  // 2. Folder & Multi‑File Selection Handler (supports PDF & Excel)
   const handleFolderSelection = (filesList: FileList | File[]) => {
     const rawFiles = Array.from(filesList);
     if (rawFiles.length === 0) return;
 
-    // Filter ONLY .pdf files (ignore other formats: docx, xlsx, images, etc.)
-    const pdfFiles = rawFiles.filter(
-      (file) =>
-        file.type === "application/pdf" ||
-        file.name.toLowerCase().endsWith(".pdf")
-    );
+    // Keep only supported documents (PDF, XLSX, XLS)
+    const supportedFiles = rawFiles.filter(isSupportedDocument);
+    const nonSupported = rawFiles.length - supportedFiles.length;
+    setFilteredOutCount(nonSupported);
 
-    const nonPdfCount = rawFiles.length - pdfFiles.length;
-    setFilteredOutCount(nonPdfCount);
-
-    if (pdfFiles.length === 0) {
+    if (supportedFiles.length === 0) {
       setErrorMsg(
-        `Tidak ditemukan file format PDF (.pdf) di dalam folder yang dipilih. ${nonPdfCount} file non-PDF telah diabaikan.`
+        `Tidak ditemukan file format PDF atau Excel yang diperbolehkan. ${nonSupported} file tidak didukung diabaikan.`
       );
       setSelectedFolderFiles([]);
       return;
     }
 
     // Check size limit (max 50MB per file)
-    const oversizedFiles = pdfFiles.filter((f) => f.size > 50 * 1024 * 1024);
-    if (oversizedFiles.length > 0) {
-      setErrorMsg(
-        `Terdapat ${oversizedFiles.length} file PDF yang melebihi batas 50 MB.`
-      );
+    const oversized = supportedFiles.filter((f) => f.size > 50 * 1024 * 1024);
+    if (oversized.length > 0) {
+      setErrorMsg(`Terdapat ${oversized.length} file yang melebihi batas 50 MB.`);
       return;
     }
 
     setErrorMsg(null);
-    setSelectedFolderFiles(pdfFiles);
+    setSelectedFolderFiles(supportedFiles);
   };
 
   // Drag & drop handler
@@ -248,7 +243,7 @@ export function UploadModal({
 
     if (uploadMode === "single") {
       if (!selectedFile) {
-        setErrorMsg("Silakan pilih berkas PDF terlebih dahulu.");
+        setErrorMsg("Silakan pilih berkas PDF atau Excel terlebih dahulu.");
         return;
       }
       if (!title.trim()) {
@@ -266,7 +261,9 @@ export function UploadModal({
     } else {
       // Folder / Bulk mode
       if (selectedFolderFiles.length === 0) {
-        setErrorMsg("Silakan pilih folder berisi berkas PDF terlebih dahulu.");
+        setErrorMsg(
+          "Silakan pilih folder berisi berkas PDF atau Excel terlebih dahulu."
+        );
         return;
       }
       // Use each file's original name as the document title
@@ -316,7 +313,7 @@ export function UploadModal({
           <div>
             <DialogTitle>Unggah Dokumen Arsip</DialogTitle>
             <DialogDescription>
-              Unggah laporan arsip perorangan atau seluruh folder berisi berkas PDF sekaligus ke repositori SI-IKAN.
+              Unggah laporan arsip perorangan atau seluruh folder berisi berkas PDF / Excel sekaligus ke repositori SI-IKAN.
             </DialogDescription>
           </div>
         </div>
@@ -355,7 +352,7 @@ export function UploadModal({
             }`}
           >
             <FolderUp className="h-3.5 w-3.5" />
-            <span>Unggah Folder (Banyak PDF)</span>
+            <span>Unggah Folder (Banyak Berkas)</span>
           </button>
         </div>
 
@@ -372,12 +369,12 @@ export function UploadModal({
           <div className="space-y-3">
             <div className="space-y-1.5">
               <label className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Berkas PDF <span className="text-rose-500">*</span>
+                Berkas PDF / Excel <span className="text-rose-500">*</span>
               </label>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="application/pdf,.pdf"
+                accept=".pdf,.xlsx,.xls"
                 className="hidden"
                 disabled={isSubmitting}
                 onChange={(e) => {
@@ -406,10 +403,10 @@ export function UploadModal({
                     <UploadCloud className="h-5 w-5" />
                   </div>
                   <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                    Klik untuk memilih file PDF atau seret ke sini
+                    Klik untuk memilih file PDF atau Excel atau seret ke sini
                   </p>
                   <p className="text-xs text-slate-400 mt-1">
-                    Format: <span className="font-semibold text-slate-600 dark:text-slate-300">PDF (.pdf)</span>, Maksimal 50 MB
+                    Format: <span className="font-semibold text-slate-600 dark:text-slate-300">PDF, Excel (.pdf, .xlsx, .xls)</span>, Maksimal 50 MB
                   </p>
                 </div>
               ) : (
@@ -423,7 +420,7 @@ export function UploadModal({
                         {selectedFile.name}
                       </p>
                       <p className="text-[11px] text-slate-500 font-mono">
-                        {formatBytes(selectedFile.size)} • PDF siap diunggah
+                        {formatBytes(selectedFile.size)} • File siap diunggah
                       </p>
                     </div>
                   </div>
@@ -464,10 +461,10 @@ export function UploadModal({
           </div>
         )}
 
-        {/* MODE 2: FOLDER (BULK PDF) UPLOAD */}
+        {/* MODE 2: FOLDER (BULK) UPLOAD */}
         {uploadMode === "folder" && (
           <div className="space-y-3">
-            {/* Hidden Input for Folder selection (using webkitdirectory and directory attributes) */}
+            {/* Hidden Input for Folder selection */}
             <input
               ref={folderInputRef}
               type="file"
@@ -487,7 +484,7 @@ export function UploadModal({
               ref={multiFileInputRef}
               type="file"
               multiple
-              accept="application/pdf,.pdf"
+              accept=".pdf,.xlsx,.xls"
               className="hidden"
               disabled={isSubmitting}
               onChange={(e) => {
@@ -515,12 +512,11 @@ export function UploadModal({
                   <FolderUp className="h-6 w-6" />
                 </div>
                 <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                  Pilih Folder Berisi Berkas PDF
+                  Pilih Folder Berisi Berkas PDF / Excel
                 </p>
                 <p className="text-xs text-slate-500 max-w-sm mt-1">
-                  Sistem akan secara otomatis memindai seluruh folder dan menyaring <strong>hanya file PDF</strong>. Berkas selain PDF akan otomatis diabaikan.
+                  Sistem akan secara otomatis memindai seluruh folder dan menyaring semua file PDF, Excel (.pdf, .xlsx, .xls). File selain yang didukung akan otomatis diabaikan.
                 </p>
-
                 {/* Folder & Multi-File Trigger Buttons */}
                 <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
                   <Button
@@ -543,12 +539,11 @@ export function UploadModal({
                     className="gap-1.5 font-semibold text-xs"
                   >
                     <Files className="h-4 w-4 text-slate-600" />
-                    <span>Pilih Banyak File PDF</span>
+                    <span>Pilih Banyak File</span>
                   </Button>
                 </div>
               </div>
             ) : (
-              /* Selected Folder Summary and Files Preview */
               <div className="space-y-2.5">
                 {/* Summary Card */}
                 <div className="flex items-center justify-between rounded-xl border border-emerald-300 bg-emerald-50/70 p-3.5 dark:border-emerald-800 dark:bg-emerald-950/40">
@@ -558,20 +553,19 @@ export function UploadModal({
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-black text-emerald-950 dark:text-emerald-100 flex items-center gap-1.5">
-                        <span>{selectedFolderFiles.length} File PDF Siap Diunggah</span>
+                        <span>{selectedFolderFiles.length} File Siap Diunggah</span>
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
                       </p>
                       <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono">
                         Total Ukuran: {formatBytes(totalFolderSize)}
                         {filteredOutCount > 0 && (
                           <span className="text-slate-500 ml-1.5">
-                            ({filteredOutCount} file non-PDF diabaikan)
+                            ({filteredOutCount} file tidak didukung diabaikan)
                           </span>
                         )}
                       </p>
                     </div>
                   </div>
-
                   <button
                     type="button"
                     disabled={isSubmitting}
@@ -595,7 +589,7 @@ export function UploadModal({
                       Daftar Berkas Terpilih ({selectedFolderFiles.length})
                     </span>
                     <span className="text-[11px] font-mono text-slate-400">
-                      Format: .PDF
+                      Format: .PDF / .XLSX / .XLS
                     </span>
                   </div>
 
@@ -804,52 +798,15 @@ export function UploadModal({
                 }}
               />
             </div>
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 truncate">
-              Sedang memproses:{" "}
-              <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
-                {uploadProgress.currentFileName}
-              </span>
-            </p>
           </div>
         )}
 
-        {/* Footer actions */}
         <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleClose}
-            disabled={isSubmitting}
-          >
-            Batal
+          <Button type="submit" disabled={isSubmitting} variant="emerald">
+            {isSubmitting ? "Mengunggah..." : "Unggah"}
           </Button>
-          <Button
-            type="submit"
-            variant="gov"
-            disabled={
-              isSubmitting ||
-              (uploadMode === "single" && (!selectedFile || !title.trim())) ||
-              (uploadMode === "folder" && selectedFolderFiles.length === 0)
-            }
-            className="min-w-[160px]"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                {uploadProgress && uploadProgress.total > 1
-                  ? `Mengunggah (${uploadProgress.current}/${uploadProgress.total})...`
-                  : "Mengunggah..."}
-              </>
-            ) : (
-              <>
-                <UploadCloud className="h-4 w-4 mr-2" />
-                {uploadMode === "single"
-                  ? "Simpan Dokumen"
-                  : selectedFolderFiles.length > 0
-                  ? `Simpan ${selectedFolderFiles.length} Dokumen Sekaligus`
-                  : "Simpan Semua Dokumen"}
-              </>
-            )}
+          <Button type="button" variant="outline" onClick={handleClose} disabled={isSubmitting}>
+            Batal
           </Button>
         </DialogFooter>
       </form>

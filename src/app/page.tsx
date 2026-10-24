@@ -21,7 +21,7 @@ import {
   UserRole,
 } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
-import { getRoleFromEmail } from "@/lib/utils";
+import { getRoleFromEmail, getDocumentViewUrl } from "@/lib/utils";
 import { Plus, Loader2, Tag } from "lucide-react";
 import { toast } from "sonner";
 
